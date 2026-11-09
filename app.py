@@ -46,11 +46,13 @@ st.sidebar.header("🎨 Layout Studio")
 
 with st.sidebar.expander("📌 Document & Branding", expanded=True):
     theme = st.selectbox("Color Theme", ["White", "Dark", "Note", "Study"])
+    layout_view_style = st.selectbox("Layout Presentation", ["Professional Document / Essay", "Modern Chat Bubbles"])
     font_style = st.selectbox("Font Style", ["Sans-serif", "Serif", "Monospace"])
     custom_title = st.text_input("Document Title Text", value="ChatGPT Conversation Export")
     header_alignment = st.selectbox("Header Alignment", ["Left", "Center", "Right"])
     footer_text = st.text_input("Custom Footer Text", value="")
-    watermark_text = st.text_input("Page Watermark Text (Optional)", value="")
+    watermark_text = st.text_input("Center Page Watermark Text", value="")
+    footer_watermark_text = st.text_input("Bottom Footer Watermark Text", value="")
 
 with st.sidebar.expander("📐 Spacing & Geometry", expanded=False):
     font_size = st.text_input("Font Size", value="16px")
@@ -59,7 +61,7 @@ with st.sidebar.expander("📐 Spacing & Geometry", expanded=False):
     line_height = st.slider("Line Spacing", min_value=1.2, max_value=2.0, value=1.6, step=0.1)
     paragraph_spacing = st.slider("Paragraph Spacing (px)", min_value=4, max_value=24, value=12, step=2)
 
-with st.sidebar.expander("✨ Styling & Accents", expanded=False):
+with st.sidebar.expander("✨ Styling, Code & Accents", expanded=False):
     accent_color_map = {
         "Modern Green (#10a37f)": "#10a37f",
         "Executive Blue (#2563eb)": "#2563eb",
@@ -68,15 +70,16 @@ with st.sidebar.expander("✨ Styling & Accents", expanded=False):
     }
     chosen_accent_label = st.selectbox("Accent & Border Color", list(accent_color_map.keys()))
     chosen_accent = accent_color_map[chosen_accent_label]
-    block_radius = st.selectbox("User Message Box Corners", ["Sharp (0px)", "Rounded (6px)", "Pill (12px)"])
-    enable_box_shadow = st.checkbox("Add Subtle Shadow to User Boxes", value=True)
+    code_theme = st.selectbox("Code Block Theme", ["GitHub", "Atom One Dark", "Monokai Sublime", "VS Code Dark"])
+    block_radius = st.selectbox("Message Box Corners", ["Sharp (0px)", "Rounded (6px)", "Pill (12px)"])
+    enable_box_shadow = st.checkbox("Add Subtle Shadow to Boxes", value=True)
 
 with st.sidebar.expander("⚙️ Structure & Filters", expanded=False):
     export_format = st.selectbox("Export Format Type", ["PDF Document (.pdf)", "Word Document (.docx)", "Markdown Document (.md)", "HTML Webpage (.html)"])
     show_user_messages = st.checkbox("Include User Messages", value=True)
     enable_ai_filter = st.checkbox("Enable Custom AI Closing Filter", value=True)
     generate_toc = st.checkbox("Include Table of Contents", value=True)
-    show_page_numbers = st.checkbox("Include Page Numbers (CSS / Word / PDF)", value=True)
+    show_page_numbers = st.checkbox("Include Page Numbers", value=True)
     show_header_title = st.checkbox("Include Title Header", value=True)
     show_dividers = st.checkbox("Show Turn Dividers", value=False)
     show_timestamp = st.checkbox("Include Export Timestamp", value=True)
@@ -166,11 +169,11 @@ def add_docx_page_number(run):
     r.append(fldChar2)
     r.append(fldChar3)
 
-def build_pdf_document(chat_sections: list, custom_title: str, show_user_messages: bool, show_timestamp: bool, footer_text: str, include_page_nos: bool) -> bytes:
+def build_pdf_document(chat_sections: list, custom_title: str, show_user_messages: bool, show_timestamp: bool, footer_text: str, include_page_nos: bool, footer_wm: str) -> bytes:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         temp_path = tmp.name
 
-    doc = SimpleDocTemplate(temp_path, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+    doc = SimpleDocTemplate(temp_path, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=50)
     styles = getSampleStyleSheet()
     story = []
 
@@ -203,12 +206,19 @@ def build_pdf_document(chat_sections: list, custom_title: str, show_user_message
         story.append(Paragraph(footer_text, footer_style))
 
     def add_footer_canvas(canvas, doc):
+        canvas.saveState()
+        canvas.setFont('Helvetica', 8)
+        canvas.setFillColor(colors.HexColor("#888888"))
+        
+        # Bottom-left footer watermark
+        if footer_wm:
+            canvas.drawString(40, 25, footer_wm)
+            
+        # Bottom-right page numbering
         if include_page_nos:
-            canvas.saveState()
-            canvas.setFont('Helvetica', 9)
-            canvas.setFillColor(colors.HexColor("#777777"))
-            canvas.drawRightString(letter[0] - 40, 30, f"Page {doc.page}")
-            canvas.restoreState()
+            canvas.drawRightString(letter[0] - 40, 25, f"Page {doc.page}")
+            
+        canvas.restoreState()
 
     doc.build(story, onFirstPage=add_footer_canvas, onLaterPages=add_footer_canvas)
 
@@ -218,27 +228,31 @@ def build_pdf_document(chat_sections: list, custom_title: str, show_user_message
         os.remove(temp_path)
     return pdf_bytes
 
-def build_html_document(chat_sections: list, theme: str, font_style: str, font_size: str, line_height: float, paragraph_spacing: int, show_user_messages: bool, show_header_title: bool, custom_title: str, header_alignment: str, show_dividers: bool, show_timestamp: bool, footer_text: str, chosen_accent: str, block_radius: str, margin_val: int, max_width: int, shadow_enabled: bool, include_toc: bool, watermark: str, include_page_nos: bool) -> str:
+def build_html_document(chat_sections: list, theme: str, layout_view_style: str, font_style: str, font_size: str, line_height: float, paragraph_spacing: int, show_user_messages: bool, show_header_title: bool, custom_title: str, header_alignment: str, show_dividers: bool, show_timestamp: bool, footer_text: str, chosen_accent: str, code_theme_name: str, block_radius: str, margin_val: int, max_width: int, shadow_enabled: bool, include_toc: bool, watermark: str, footer_wm: str, include_page_nos: bool) -> str:
     if theme == "Dark":
         bg_color, text_color = "#121212", "#e0e0e0"
         user_bg, user_text = "#1a332c", "#a3e4d7"
         border_color, code_bg, code_color = "#333333", "#1e1e1e", "#dcdcaa"
-        highlight_theme = "atom-one-dark"
     elif theme == "Note":
         bg_color, text_color = "#fbf0d9", "#2c221e"
         user_bg, user_text = "#e6f2ed", "#1b4d3e"
         border_color, code_bg, code_color = "#e6d7bc", "#f4e7ce", "#2c221e"
-        highlight_theme = "intellij-light"
     elif theme == "Study":
         bg_color, text_color = "#f0f4f8", "#102a43"
         user_bg, user_text = "#d9e2ec", "#243b53"
         border_color, code_bg, code_color = "#bcccdc", "#e2e8f0", "#102a43"
-        highlight_theme = "github"
     else:
         bg_color, text_color = "#ffffff", "#1a1a1a"
         user_bg, user_text = "#edf7f0", "#114f2e"
         border_color, code_bg, code_color = "#e1e4e8", "#f6f8fa", "#24292e"
-        highlight_theme = "github"
+
+    code_theme_map = {
+        "GitHub": "github",
+        "Atom One Dark": "atom-one-dark",
+        "Monokai Sublime": "monokai-sublime",
+        "VS Code Dark": "vs2015"
+    }
+    highlight_theme = code_theme_map.get(code_theme_name, "github")
 
     font_map = {
         "Sans-serif": '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
@@ -278,17 +292,28 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
     </div>
     """ if watermark else ""
 
-    page_num_css = """
-    @page {
-        @bottom-right {
-            content: "Page " counter(page) " of " counter(pages);
-            font-size: 9pt;
+    # CSS Paged Media setup for print / PDF page numbers & footer watermark
+    page_bottom_left_content = f'"{footer_wm}"' if footer_wm else '""'
+    page_bottom_right_content = '"Page " counter(page) " of " counter(pages)' if include_page_nos else '""'
+
+    page_num_css = f"""
+    @page {{
+        @bottom-left {{
+            content: {page_bottom_left_content};
+            font-size: 8pt;
             color: #888888;
-        }
-    }
-    """ if include_page_nos else ""
+        }}
+        @bottom-right {{
+            content: {page_bottom_right_content};
+            font-size: 8pt;
+            color: #888888;
+        }}
+    }}
+    """
 
     divider_html = f"""<hr style="border: none; border-top: 1px solid {border_color}; margin: 24px 0;" />""" if show_dividers else ""
+
+    is_chat_bubbles = (layout_view_style == "Modern Chat Bubbles")
 
     document_body_html = ""
     for idx, (sec_title, messages) in enumerate(chat_sections):
@@ -304,19 +329,39 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
             if role == "User":
                 if not show_user_messages:
                     continue
-                document_body_html += f"""
-                <div style="background-color: {user_bg} !important; border-left: 4px solid {chosen_accent}; padding: 14px 18px; margin: 20px 0; border-radius: 0 {chosen_radius} {chosen_radius} 0; color: {user_text} !important; {box_shadow_css}">
-                    <div style="font-size: {font_size}; color: {user_text} !important;">{msg["html"]}</div>
-                </div>
-                {divider_html}
-                """
+                if is_chat_bubbles:
+                    document_body_html += f"""
+                    <div style="display: flex; justify-content: flex-end; margin: 16px 0;">
+                        <div style="background-color: {user_bg} !important; border: 1px solid {border_color}; padding: 14px 18px; max-width: 85%; border-radius: {chosen_radius} {chosen_radius} 0 {chosen_radius}; color: {user_text} !important; {box_shadow_css}">
+                            <div style="font-size: 0.75em; font-weight: bold; margin-bottom: 4px; opacity: 0.8;">You</div>
+                            <div style="font-size: {font_size}; color: {user_text} !important;">{msg["html"]}</div>
+                        </div>
+                    </div>
+                    """
+                else:
+                    document_body_html += f"""
+                    <div style="background-color: {user_bg} !important; border-left: 4px solid {chosen_accent}; padding: 14px 18px; margin: 20px 0; border-radius: 0 {chosen_radius} {chosen_radius} 0; color: {user_text} !important; {box_shadow_css}">
+                        <div style="font-size: {font_size}; color: {user_text} !important;">{msg["html"]}</div>
+                    </div>
+                    {divider_html}
+                    """
             else:
-                document_body_html += f"""
-                <div style="margin: 20px 0; color: {text_color} !important; font-size: {font_size};">
-                    {msg["html"]}
-                </div>
-                {divider_html}
-                """
+                if is_chat_bubbles:
+                    document_body_html += f"""
+                    <div style="display: flex; justify-content: flex-start; margin: 16px 0;">
+                        <div style="background-color: {code_bg} !important; border: 1px solid {border_color}; padding: 14px 18px; max-width: 85%; border-radius: {chosen_radius} {chosen_radius} {chosen_radius} 0; color: {text_color} !important; {box_shadow_css}">
+                            <div style="font-size: 0.75em; font-weight: bold; margin-bottom: 4px; color: {chosen_accent};">ChatGPT</div>
+                            <div style="font-size: {font_size}; color: {text_color} !important;">{msg["html"]}</div>
+                        </div>
+                    </div>
+                    """
+                else:
+                    document_body_html += f"""
+                    <div style="margin: 20px 0; color: {text_color} !important; font-size: {font_size};">
+                        {msg["html"]}
+                    </div>
+                    {divider_html}
+                    """
 
     footer_html = f"""
     <div style="margin-top: 40px; padding-top: 15px; border-top: 1px dashed {border_color}; font-size: 0.85em; text-align: center; color: {text_color}; opacity: 0.8;">
@@ -390,16 +435,24 @@ def convert_chats_to_markdown(chat_sections: list, custom_title: str) -> str:
             md_content += f"### **{msg['role']}**\n\n{msg['html']}\n\n---\n\n"
     return md_content
 
-def convert_chats_to_docx(chat_sections: list, custom_title: str, show_user_messages: bool, show_timestamp: bool, footer_text: str, include_page_nos: bool) -> bytes:
+def convert_chats_to_docx(chat_sections: list, custom_title: str, show_user_messages: bool, show_timestamp: bool, footer_text: str, include_page_nos: bool, footer_wm: str) -> bytes:
     doc = Document()
 
+    section = doc.sections[0]
+    footer = section.footer
+    p = footer.paragraphs[0]
+    
+    # Configure Word Footer with Watermark (left) and Page Numbering (right)
+    if footer_wm:
+        r_wm = p.add_run(footer_wm)
+        r_wm.font.size = Pt(8.5)
+        r_wm.font.color.rgb = RGBColor(120, 120, 120)
+        if include_page_nos:
+            p.add_run("\t\t") # Add tabs to space them out
+            
     if include_page_nos:
-        section = doc.sections[0]
-        footer = section.footer
-        p = footer.paragraphs[0]
-        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         r_page = p.add_run("Page ")
-        r_page.font.size = Pt(9)
+        r_page.font.size = Pt(8.5)
         r_page.font.color.rgb = RGBColor(120, 120, 120)
         add_docx_page_number(p.add_run())
 
@@ -523,9 +576,9 @@ with tab_preview:
     if st.session_state.chat_sections:
         st.caption("Instantly reflects your chosen theme, custom titles, and layout configurations from the sidebar.")
         live_preview_html = build_html_document(
-            st.session_state.chat_sections, theme, font_style, font_size, line_height, paragraph_spacing,
+            st.session_state.chat_sections, theme, layout_view_style, font_style, font_size, line_height, paragraph_spacing,
             show_user_messages, show_header_title, custom_title, header_alignment, 
-            show_dividers, show_timestamp, footer_text, chosen_accent, block_radius, margin_mm, max_content_width, enable_box_shadow, generate_toc, watermark_text, show_page_numbers
+            show_dividers, show_timestamp, footer_text, chosen_accent, code_theme, block_radius, margin_mm, max_content_width, enable_box_shadow, generate_toc, watermark_text, footer_watermark_text, show_page_numbers
         )
         with st.container(border=True):
             st.components.v1.html(live_preview_html, height=700, scrolling=True)
@@ -545,12 +598,12 @@ with tab_download:
 
                 if "PDF" in export_format:
                     with st.spinner("Compiling PDF Document..."):
-                        file_data = build_pdf_document(st.session_state.chat_sections, custom_title, show_user_messages, show_timestamp, footer_text, show_page_numbers)
+                        file_data = build_pdf_document(st.session_state.chat_sections, custom_title, show_user_messages, show_timestamp, footer_text, show_page_numbers, footer_watermark_text)
                         mime_type = "application/pdf"
                         final_name = f"{base_filename}.pdf"
                 elif "Word" in export_format:
                     with st.spinner("Compiling Word Document (.docx)..."):
-                        file_data = convert_chats_to_docx(st.session_state.chat_sections, custom_title, show_user_messages, show_timestamp, footer_text, show_page_numbers)
+                        file_data = convert_chats_to_docx(st.session_state.chat_sections, custom_title, show_user_messages, show_timestamp, footer_text, show_page_numbers, footer_watermark_text)
                         mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         final_name = f"{base_filename}.docx"
                 elif "Markdown" in export_format:
@@ -562,9 +615,9 @@ with tab_download:
                 else: # HTML
                     with st.spinner("Generating HTML file..."):
                         live_preview_html = build_html_document(
-                            st.session_state.chat_sections, theme, font_style, font_size, line_height, paragraph_spacing,
+                            st.session_state.chat_sections, theme, layout_view_style, font_style, font_size, line_height, paragraph_spacing,
                             show_user_messages, show_header_title, custom_title, header_alignment, 
-                            show_dividers, show_timestamp, footer_text, chosen_accent, block_radius, margin_mm, max_content_width, enable_box_shadow, generate_toc, watermark_text, show_page_numbers
+                            show_dividers, show_timestamp, footer_text, chosen_accent, code_theme, block_radius, margin_mm, max_content_width, enable_box_shadow, generate_toc, watermark_text, footer_watermark_text, show_page_numbers
                         )
                         file_data = live_preview_html.encode("utf-8")
                         mime_type = "text/html"
