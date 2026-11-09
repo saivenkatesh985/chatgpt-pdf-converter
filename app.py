@@ -116,7 +116,12 @@ with st.sidebar.expander("⚙️ Structure & Filters", expanded=False):
           "HTML Webpage (.html)",
       ],
   )
-  show_user_messages = st.checkbox("Include User Messages", value=True)
+
+  user_msg_mode = st.selectbox(
+      "User Messages Inclusion",
+      ["All User Messages", "Select Specific Messages", "None (Assistant Only)"],
+  )
+
   enable_ai_filter = st.checkbox(
       "Enable Custom AI Closing Filter", value=True
   )
@@ -129,7 +134,6 @@ with st.sidebar.expander("⚙️ Structure & Filters", expanded=False):
 # --- SESSION STATE ---
 if "chat_sections" not in st.session_state:
   st.session_state.chat_sections = None
-
 
 # --- HELPER FUNCTIONS ---
 def clean_assistant_text(text: str) -> str:
@@ -225,15 +229,38 @@ def add_docx_page_number(run):
   r.append(fldChar3)
 
 
+def get_filtered_sections(chat_sections, user_msg_mode, allowed_user_texts):
+  if not chat_sections:
+    return []
+  
+  filtered_sections = []
+  for sec_title, messages in chat_sections:
+    new_messages = []
+    for msg in messages:
+      if msg["role"] == "User":
+        if user_msg_mode == "None (Assistant Only)":
+          continue
+        elif user_msg_mode == "Select Specific Messages":
+          clean_plain = re.sub("<[^<]+?>", "", msg["html"])
+          if clean_plain not in allowed_user_texts:
+            continue
+      new_messages.append(msg)
+    if new_messages:
+      filtered_sections.append((sec_title, new_messages))
+  return filtered_sections
+
+
 def build_pdf_document(
     chat_sections: list,
     custom_title: str,
-    show_user_messages: bool,
+    user_msg_mode: str,
+    allowed_user_texts: list,
     show_timestamp: bool,
     footer_text: str,
     include_page_nos: bool,
     footer_wm: str,
 ) -> bytes:
+  active_sections = get_filtered_sections(chat_sections, user_msg_mode, allowed_user_texts)
   with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
     temp_path = tmp.name
 
@@ -299,19 +326,16 @@ def build_pdf_document(
   if show_timestamp:
     story.append(
         Paragraph(
-            f"Exported on:"
-            f" {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            f"Exported on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}",
             sub_style,
         )
     )
 
-  for sec_title, messages in chat_sections:
+  for sec_title, messages in active_sections:
     if sec_title:
       story.append(Paragraph(sec_title, sec_style))
     for msg in messages:
       role = msg["role"]
-      if role == "User" and not show_user_messages:
-        continue
       story.append(Paragraph(f"<b>{role}:</b>", role_style))
       clean_text = re.sub("<[^<]+?>", "", msg["html"])
       story.append(Paragraph(clean_text, body_style))
@@ -353,7 +377,8 @@ def build_html_document(
     font_size: str,
     line_height: float,
     paragraph_spacing: int,
-    show_user_messages: bool,
+    user_msg_mode: str,
+    allowed_user_texts: list,
     show_header_title: bool,
     custom_title: str,
     header_alignment: str,
@@ -371,6 +396,8 @@ def build_html_document(
     footer_wm: str,
     include_page_nos: bool,
 ) -> str:
+  active_sections = get_filtered_sections(chat_sections, user_msg_mode, allowed_user_texts)
+
   if theme == "Black (OLED)":
     bg_color, text_color = "#000000", "#f3f4f6"
     user_bg, user_text = "#18181b", "#a1a1aa"
@@ -447,11 +474,11 @@ def build_html_document(
   )
 
   toc_html = ""
-  if include_toc and len(chat_sections) > 1:
+  if include_toc and len(active_sections) > 1:
     toc_items = "".join([
         f'<li><a href="#section-{idx}" style="color: {chosen_accent};'
         f' text-decoration: none;">{sec_title}</a></li>'
-        for idx, (sec_title, _) in enumerate(chat_sections)
+        for idx, (sec_title, _) in enumerate(active_sections)
     ])
     toc_html = f"""
         <div style="background-color: {code_bg}; border: 1px solid {border_color}; padding: 16px 20px; border-radius: 8px; margin-bottom: 30px;">
@@ -502,9 +529,9 @@ def build_html_document(
   is_chat_bubbles = layout_view_style == "Modern Chat Bubbles"
 
   document_body_html = ""
-  for idx, (sec_title, messages) in enumerate(chat_sections):
+  for idx, (sec_title, messages) in enumerate(active_sections):
     section_id = f"section-{idx}"
-    if len(chat_sections) > 1 or sec_title:
+    if len(active_sections) > 1 or sec_title:
       document_body_html += f"""
             <div id="{section_id}" style="font-size: 1.2em; font-weight: bold; color: {chosen_accent}; margin-top: 40px; margin-bottom: 20px; border-bottom: 1px dashed {border_color}; padding-bottom: 8px;">
                 {sec_title}
@@ -513,8 +540,6 @@ def build_html_document(
     for msg in messages:
       role = msg["role"]
       if role == "User":
-        if not show_user_messages:
-          continue
         if is_chat_bubbles:
           document_body_html += f"""
                     <div style="display: flex; justify-content: flex-end; margin: 16px 0;">
@@ -616,9 +641,10 @@ def build_html_document(
   return full_html
 
 
-def convert_chats_to_markdown(chat_sections: list, custom_title: str) -> str:
+def convert_chats_to_markdown(chat_sections: list, custom_title: str, user_msg_mode: str, allowed_user_texts: list) -> str:
+  active_sections = get_filtered_sections(chat_sections, user_msg_mode, allowed_user_texts)
   md_content = f"# {custom_title}\n\n"
-  for sec_title, messages in chat_sections:
+  for sec_title, messages in active_sections:
     if sec_title:
       md_content += f"## {sec_title}\n\n"
     for msg in messages:
@@ -629,12 +655,14 @@ def convert_chats_to_markdown(chat_sections: list, custom_title: str) -> str:
 def convert_chats_to_docx(
     chat_sections: list,
     custom_title: str,
-    show_user_messages: bool,
+    user_msg_mode: str,
+    allowed_user_texts: list,
     show_timestamp: bool,
     footer_text: str,
     include_page_nos: bool,
     footer_wm: str,
 ) -> bytes:
+  active_sections = get_filtered_sections(chat_sections, user_msg_mode, allowed_user_texts)
   doc = Document()
 
   section = doc.sections[0]
@@ -670,7 +698,7 @@ def convert_chats_to_docx(
     ts_run.font.color.rgb = RGBColor(120, 120, 120)
     ts_p.paragraph_format.space_after = Pt(18)
 
-  for sec_title, messages in chat_sections:
+  for sec_title, messages in active_sections:
     if sec_title:
       sec_p = doc.add_paragraph()
       sec_run = sec_p.add_run(sec_title)
@@ -681,8 +709,6 @@ def convert_chats_to_docx(
 
     for msg in messages:
       role = msg["role"]
-      if role == "User" and not show_user_messages:
-        continue
       role_p = doc.add_paragraph()
       role_run = role_p.add_run(f"{role}:")
       role_run.bold = True
@@ -809,6 +835,26 @@ with tab_input:
             " check the URLs."
         )
 
+# Gather all user messages for granular selection if needed
+all_fetched_user_texts = []
+if st.session_state.chat_sections:
+  for _, msgs in st.session_state.chat_sections:
+    for m in msgs:
+      if m["role"] == "User":
+        plain_t = re.sub("<[^<]+?>", "", m["html"])
+        if plain_t not in all_fetched_user_texts:
+          all_fetched_user_texts.append(plain_t)
+
+selected_user_texts = all_fetched_user_texts
+if user_msg_mode == "Select Specific Messages" and all_fetched_user_texts:
+  st.sidebar.markdown("---")
+  st.sidebar.markdown("##### 🎯 Choose User Prompts to Include")
+  selected_user_texts = st.sidebar.multiselect(
+      "Select User Messages",
+      options=all_fetched_user_texts,
+      default=all_fetched_user_texts,
+  )
+
 with tab_preview:
   st.subheader("Live Document Preview")
   if st.session_state.chat_sections:
@@ -824,7 +870,8 @@ with tab_preview:
         font_size,
         line_height,
         paragraph_spacing,
-        show_user_messages,
+        user_msg_mode,
+        selected_user_texts,
         show_header_title,
         custom_title,
         header_alignment,
@@ -866,7 +913,8 @@ with tab_download:
             file_data = build_pdf_document(
                 st.session_state.chat_sections,
                 custom_title,
-                show_user_messages,
+                user_msg_mode,
+                selected_user_texts,
                 show_timestamp,
                 footer_text,
                 show_page_numbers,
@@ -879,7 +927,8 @@ with tab_download:
             file_data = convert_chats_to_docx(
                 st.session_state.chat_sections,
                 custom_title,
-                show_user_messages,
+                user_msg_mode,
+                selected_user_texts,
                 show_timestamp,
                 footer_text,
                 show_page_numbers,
@@ -892,7 +941,7 @@ with tab_download:
         elif "Markdown" in export_format:
           with st.spinner("Generating Markdown file..."):
             md_text = convert_chats_to_markdown(
-                st.session_state.chat_sections, custom_title
+                st.session_state.chat_sections, custom_title, user_msg_mode, selected_user_texts
             )
             file_data = md_text.encode("utf-8")
             mime_type = "text/markdown"
@@ -907,7 +956,8 @@ with tab_download:
                 font_size,
                 line_height,
                 paragraph_spacing,
-                show_user_messages,
+                user_msg_mode,
+                selected_user_texts,
                 show_header_title,
                 custom_title,
                 header_alignment,
