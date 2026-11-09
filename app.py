@@ -18,7 +18,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 # Page config
 st.set_page_config(
-    page_title="ChatGPT Document Studio", page_icon="📄", layout="wide"
+    page_title="ChatGPT Document Studio", page_icon="⬇️", layout="wide"
 )
 
 # Custom UI polish
