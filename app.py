@@ -11,6 +11,12 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
+# ReportLab imports for native PDF generation
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
 # Page config
 st.set_page_config(page_title="ChatGPT Document Studio", page_icon="📄", layout="wide")
 
@@ -33,7 +39,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📄 ChatGPT Link to Multi-Format Document Studio")
-st.markdown("Transform single or multiple public ChatGPT conversations into professionally styled Word, Markdown, or HTML documents.")
+st.markdown("Transform single or multiple public ChatGPT conversations into professionally styled Word, Markdown, PDF, or HTML documents.")
 
 # --- SIDEBAR: ORGANIZED LAYOUT STUDIO ---
 st.sidebar.header("🎨 Layout Studio")
@@ -66,11 +72,11 @@ with st.sidebar.expander("✨ Styling & Accents", expanded=False):
     enable_box_shadow = st.checkbox("Add Subtle Shadow to User Boxes", value=True)
 
 with st.sidebar.expander("⚙️ Structure & Filters", expanded=False):
-    export_format = st.selectbox("Export Format Type", ["Word Document (.docx)", "Markdown Document (.md)", "HTML Webpage (.html)"])
+    export_format = st.selectbox("Export Format Type", ["PDF Document (.pdf)", "Word Document (.docx)", "Markdown Document (.md)", "HTML Webpage (.html)"])
     show_user_messages = st.checkbox("Include User Messages", value=True)
     enable_ai_filter = st.checkbox("Enable Custom AI Closing Filter", value=True)
     generate_toc = st.checkbox("Include Table of Contents", value=True)
-    show_page_numbers = st.checkbox("Include Page Numbers (CSS / Word)", value=True)
+    show_page_numbers = st.checkbox("Include Page Numbers (CSS / Word / PDF)", value=True)
     show_header_title = st.checkbox("Include Title Header", value=True)
     show_dividers = st.checkbox("Show Turn Dividers", value=False)
     show_timestamp = st.checkbox("Include Export Timestamp", value=True)
@@ -144,7 +150,6 @@ def scrape_single_chat(url: str, apply_filter: bool) -> list:
     return messages
 
 def add_docx_page_number(run):
-    """Utility to inject Word XML field codes for dynamic page numbering (Page X of Y)."""
     fldChar1 = OxmlElement('w:fldChar')
     fldChar1.set(qn('w:fldCharType'), 'begin')
     instrText = OxmlElement('w:instrText')
@@ -160,6 +165,58 @@ def add_docx_page_number(run):
     r.append(instrText)
     r.append(fldChar2)
     r.append(fldChar3)
+
+def build_pdf_document(chat_sections: list, custom_title: str, show_user_messages: bool, show_timestamp: bool, footer_text: str, include_page_nos: bool) -> bytes:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        temp_path = tmp.name
+
+    doc = SimpleDocTemplate(temp_path, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+    styles = getSampleStyleSheet()
+    story = []
+
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor("#111111"), spaceAfter=10)
+    sub_style = ParagraphStyle('SubStyle', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor("#777777"), spaceAfter=15)
+    sec_style = ParagraphStyle('SecStyle', parent=styles['Heading2'], fontSize=14, textColor=colors.HexColor("#2563eb"), spaceBefore=12, spaceAfter=8)
+    role_style = ParagraphStyle('RoleStyle', parent=styles['Normal'], fontSize=11, fontName="Helvetica-Bold", textColor=colors.HexColor("#333333"), spaceBefore=8, spaceAfter=4)
+    body_style = ParagraphStyle('BodyStyle', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor("#222222"), spaceAfter=10)
+    footer_style = ParagraphStyle('FooterStyle', parent=styles['Normal'], fontSize=8, textColor=colors.HexColor("#777777"), alignment=1)
+
+    if custom_title:
+        story.append(Paragraph(custom_title, title_style))
+    if show_timestamp:
+        story.append(Paragraph(f"Exported on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", sub_style))
+
+    for sec_title, messages in chat_sections:
+        if sec_title:
+            story.append(Paragraph(sec_title, sec_style))
+        for msg in messages:
+            role = msg["role"]
+            if role == "User" and not show_user_messages:
+                continue
+            story.append(Paragraph(f"<b>{role}:</b>", role_style))
+            clean_text = re.sub('<[^<]+?>', '', msg['html'])
+            story.append(Paragraph(clean_text, body_style))
+            story.append(Spacer(1, 6))
+
+    if footer_text:
+        story.append(Spacer(1, 20))
+        story.append(Paragraph(footer_text, footer_style))
+
+    def add_footer_canvas(canvas, doc):
+        if include_page_nos:
+            canvas.saveState()
+            canvas.setFont('Helvetica', 9)
+            canvas.setFillColor(colors.HexColor("#777777"))
+            canvas.drawRightString(letter[0] - 40, 30, f"Page {doc.page}")
+            canvas.restoreState()
+
+    doc.build(story, onFirstPage=add_footer_canvas, onLaterPages=add_footer_canvas)
+
+    with open(temp_path, "rb") as f:
+        pdf_bytes = f.read()
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+    return pdf_bytes
 
 def build_html_document(chat_sections: list, theme: str, font_style: str, font_size: str, line_height: float, paragraph_spacing: int, show_user_messages: bool, show_header_title: bool, custom_title: str, header_alignment: str, show_dividers: bool, show_timestamp: bool, footer_text: str, chosen_accent: str, block_radius: str, margin_val: int, max_width: int, shadow_enabled: bool, include_toc: bool, watermark: str, include_page_nos: bool) -> str:
     if theme == "Dark":
@@ -485,14 +542,13 @@ with tab_download:
                 base_filename = output_filename.strip()
                 if not base_filename:
                     base_filename = "chat_export"
-                
-                live_preview_html = build_html_document(
-                    st.session_state.chat_sections, theme, font_style, font_size, line_height, paragraph_spacing,
-                    show_user_messages, show_header_title, custom_title, header_alignment, 
-                    show_dividers, show_timestamp, footer_text, chosen_accent, block_radius, margin_mm, max_content_width, enable_box_shadow, generate_toc, watermark_text, show_page_numbers
-                )
 
-                if "Word" in export_format:
+                if "PDF" in export_format:
+                    with st.spinner("Compiling PDF Document..."):
+                        file_data = build_pdf_document(st.session_state.chat_sections, custom_title, show_user_messages, show_timestamp, footer_text, show_page_numbers)
+                        mime_type = "application/pdf"
+                        final_name = f"{base_filename}.pdf"
+                elif "Word" in export_format:
                     with st.spinner("Compiling Word Document (.docx)..."):
                         file_data = convert_chats_to_docx(st.session_state.chat_sections, custom_title, show_user_messages, show_timestamp, footer_text, show_page_numbers)
                         mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -505,6 +561,11 @@ with tab_download:
                         final_name = f"{base_filename}.md"
                 else: # HTML
                     with st.spinner("Generating HTML file..."):
+                        live_preview_html = build_html_document(
+                            st.session_state.chat_sections, theme, font_style, font_size, line_height, paragraph_spacing,
+                            show_user_messages, show_header_title, custom_title, header_alignment, 
+                            show_dividers, show_timestamp, footer_text, chosen_accent, block_radius, margin_mm, max_content_width, enable_box_shadow, generate_toc, watermark_text, show_page_numbers
+                        )
                         file_data = live_preview_html.encode("utf-8")
                         mime_type = "text/html"
                         final_name = f"{base_filename}.html"
