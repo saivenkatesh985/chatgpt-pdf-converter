@@ -117,10 +117,9 @@ with st.sidebar.expander("⚙️ Structure & Filters", expanded=False):
       ],
   )
 
-  message_selection_mode = st.radio(
-      "Message Inclusion Mode",
-      ["All Messages", "Pick Specific Messages (Custom)"],
-      horizontal=True
+  user_msg_mode = st.selectbox(
+      "User Messages Inclusion",
+      ["All User Messages", "Select Specific Messages", "None (Assistant Only)"],
   )
 
   enable_ai_filter = st.checkbox(
@@ -203,14 +202,7 @@ def scrape_single_chat(url: str, apply_filter: bool) -> list:
               formatted_html = markdown.markdown(
                   text_content, extensions=["fenced_code", "tables"]
               )
-              # Unique identifier key for custom selection
-              msg_id = f"{role_label}: {text_content[:60]}..."
-              messages.append({
-                  "id": msg_id,
-                  "role": role_label,
-                  "text": text_content,
-                  "html": formatted_html
-              })
+              messages.append({"role": role_label, "html": formatted_html})
   except Exception as parse_err:
     raise Exception(f"Error parsing conversation JSON: {parse_err}")
 
@@ -237,7 +229,7 @@ def add_docx_page_number(run):
   r.append(fldChar3)
 
 
-def get_filtered_sections(chat_sections, selection_mode, allowed_ids):
+def get_filtered_sections(chat_sections, user_msg_mode, allowed_user_texts):
   if not chat_sections:
     return []
   
@@ -245,9 +237,13 @@ def get_filtered_sections(chat_sections, selection_mode, allowed_ids):
   for sec_title, messages in chat_sections:
     new_messages = []
     for msg in messages:
-      if selection_mode == "Pick Specific Messages (Custom)":
-        if msg.get("id") not in allowed_ids:
+      if msg["role"] == "User":
+        if user_msg_mode == "None (Assistant Only)":
           continue
+        elif user_msg_mode == "Select Specific Messages":
+          clean_plain = re.sub("<[^<]+?>", "", msg["html"])
+          if clean_plain not in allowed_user_texts:
+            continue
       new_messages.append(msg)
     if new_messages:
       filtered_sections.append((sec_title, new_messages))
@@ -257,14 +253,14 @@ def get_filtered_sections(chat_sections, selection_mode, allowed_ids):
 def build_pdf_document(
     chat_sections: list,
     custom_title: str,
-    selection_mode: str,
-    allowed_ids: list,
+    user_msg_mode: str,
+    allowed_user_texts: list,
     show_timestamp: bool,
     footer_text: str,
     include_page_nos: bool,
     footer_wm: str,
 ) -> bytes:
-  active_sections = get_filtered_sections(chat_sections, selection_mode, allowed_ids)
+  active_sections = get_filtered_sections(chat_sections, user_msg_mode, allowed_user_texts)
   with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
     temp_path = tmp.name
 
@@ -381,8 +377,8 @@ def build_html_document(
     font_size: str,
     line_height: float,
     paragraph_spacing: int,
-    selection_mode: str,
-    allowed_ids: list,
+    user_msg_mode: str,
+    allowed_user_texts: list,
     show_header_title: bool,
     custom_title: str,
     header_alignment: str,
@@ -400,7 +396,7 @@ def build_html_document(
     footer_wm: str,
     include_page_nos: bool,
 ) -> str:
-  active_sections = get_filtered_sections(chat_sections, selection_mode, allowed_ids)
+  active_sections = get_filtered_sections(chat_sections, user_msg_mode, allowed_user_texts)
 
   if theme == "Black (OLED)":
     bg_color, text_color = "#000000", "#f3f4f6"
@@ -645,8 +641,8 @@ def build_html_document(
   return full_html
 
 
-def convert_chats_to_markdown(chat_sections: list, custom_title: str, selection_mode: str, allowed_ids: list) -> str:
-  active_sections = get_filtered_sections(chat_sections, selection_mode, allowed_ids)
+def convert_chats_to_markdown(chat_sections: list, custom_title: str, user_msg_mode: str, allowed_user_texts: list) -> str:
+  active_sections = get_filtered_sections(chat_sections, user_msg_mode, allowed_user_texts)
   md_content = f"# {custom_title}\n\n"
   for sec_title, messages in active_sections:
     if sec_title:
@@ -659,14 +655,14 @@ def convert_chats_to_markdown(chat_sections: list, custom_title: str, selection_
 def convert_chats_to_docx(
     chat_sections: list,
     custom_title: str,
-    selection_mode: str,
-    allowed_ids: list,
+    user_msg_mode: str,
+    allowed_user_texts: list,
     show_timestamp: bool,
     footer_text: str,
     include_page_nos: bool,
     footer_wm: str,
 ) -> bytes:
-  active_sections = get_filtered_sections(chat_sections, selection_mode, allowed_ids)
+  active_sections = get_filtered_sections(chat_sections, user_msg_mode, allowed_user_texts)
   doc = Document()
 
   section = doc.sections[0]
@@ -839,25 +835,24 @@ with tab_input:
             " check the URLs."
         )
 
-# Gather all individual messages for granular sidebar picking
-all_message_ids = []
-id_to_label_map = {}
+# Gather all user messages for granular selection if needed
+all_fetched_user_texts = []
 if st.session_state.chat_sections:
   for _, msgs in st.session_state.chat_sections:
     for m in msgs:
-      mid = m["id"]
-      all_message_ids.append(mid)
-      id_to_label_map[mid] = f"[{m['role']}] {m['text'][:55]}..."
+      if m["role"] == "User":
+        plain_t = re.sub("<[^<]+?>", "", m["html"])
+        if plain_t not in all_fetched_user_texts:
+          all_fetched_user_texts.append(plain_t)
 
-selected_message_ids = all_message_ids
-if message_selection_mode == "Pick Specific Messages (Custom)" and all_message_ids:
+selected_user_texts = all_fetched_user_texts
+if user_msg_mode == "Select Specific Messages" and all_fetched_user_texts:
   st.sidebar.markdown("---")
-  st.sidebar.markdown("##### 🎯 Custom Message Selector")
-  selected_message_ids = st.sidebar.multiselect(
-      "Check messages to include:",
-      options=all_message_ids,
-      default=all_message_ids,
-      format_func=lambda x: id_to_label_map.get(x, x)
+  st.sidebar.markdown("##### 🎯 Choose User Prompts to Include")
+  selected_user_texts = st.sidebar.multiselect(
+      "Select User Messages",
+      options=all_fetched_user_texts,
+      default=all_fetched_user_texts,
   )
 
 with tab_preview:
@@ -875,8 +870,8 @@ with tab_preview:
         font_size,
         line_height,
         paragraph_spacing,
-        message_selection_mode,
-        selected_message_ids,
+        user_msg_mode,
+        selected_user_texts,
         show_header_title,
         custom_title,
         header_alignment,
@@ -918,8 +913,8 @@ with tab_download:
             file_data = build_pdf_document(
                 st.session_state.chat_sections,
                 custom_title,
-                message_selection_mode,
-                selected_message_ids,
+                user_msg_mode,
+                selected_user_texts,
                 show_timestamp,
                 footer_text,
                 show_page_numbers,
@@ -932,8 +927,8 @@ with tab_download:
             file_data = convert_chats_to_docx(
                 st.session_state.chat_sections,
                 custom_title,
-                message_selection_mode,
-                selected_message_ids,
+                user_msg_mode,
+                selected_user_texts,
                 show_timestamp,
                 footer_text,
                 show_page_numbers,
@@ -946,7 +941,7 @@ with tab_download:
         elif "Markdown" in export_format:
           with st.spinner("Generating Markdown file..."):
             md_text = convert_chats_to_markdown(
-                st.session_state.chat_sections, custom_title, message_selection_mode, selected_message_ids
+                st.session_state.chat_sections, custom_title, user_msg_mode, selected_user_texts
             )
             file_data = md_text.encode("utf-8")
             mime_type = "text/markdown"
@@ -961,8 +956,8 @@ with tab_download:
                 font_size,
                 line_height,
                 paragraph_spacing,
-                message_selection_mode,
-                selected_message_ids,
+                user_msg_mode,
+                selected_user_texts,
                 show_header_title,
                 custom_title,
                 header_alignment,
