@@ -1,6 +1,7 @@
 import os
 import tempfile
 import datetime
+import re
 import requests
 import markdown
 import streamlit as st
@@ -44,6 +45,7 @@ st.sidebar.header("⚙️ Advanced Styling & Structure")
 
 export_format = st.sidebar.selectbox("Export Format Type", ["Word Document (.docx)", "Markdown Document (.md)", "HTML Webpage (.html)"])
 show_user_messages = st.sidebar.checkbox("Include User Messages", value=True)
+remove_ai_closings = st.sidebar.checkbox("Remove AI Closing Offers ('If you want, I can...')", value=True)
 show_header_title = st.sidebar.checkbox("Include Document Title Header", value=True)
 custom_title = st.sidebar.text_input("Document Title Text", value="ChatGPT Conversation Export")
 header_alignment = st.sidebar.selectbox("Header Alignment", ["Left", "Center", "Right"])
@@ -92,7 +94,12 @@ else:
 
 output_filename = st.text_input("Output Filename", value="chatgpt_export")
 
-def scrape_single_chat(url: str) -> list:
+def clean_assistant_text(text: str) -> str:
+    """Removes trailing AI closing offers and follow-up bullets."""
+    pattern = re.compile(r'\n+(?:If you want, I can:|Would you like me to:|Let me know if you).*$', re.DOTALL | re.IGNORECASE)
+    return pattern.sub('', text).strip()
+
+def scrape_single_chat(url: str, strip_closings: bool) -> list:
     """Fetches chat content via ChatGPT's backend share API and parses Markdown into formatted HTML."""
     clean_url = url.split("?")[0].strip()
     if not clean_url:
@@ -136,11 +143,16 @@ def scrape_single_chat(url: str) -> list:
                     text_content = "".join([str(p) for p in content_parts if isinstance(p, str)])
                     if text_content.strip():
                         role_label = "User" if author == "user" else "ChatGPT"
-                        formatted_html = markdown.markdown(text_content, extensions=['fenced_code', 'tables'])
-                        messages.append({
-                            "role": role_label,
-                            "html": formatted_html
-                        })
+                        
+                        if role_label == "ChatGPT" and strip_closings:
+                            text_content = clean_assistant_text(text_content)
+                            
+                        if text_content.strip():
+                            formatted_html = markdown.markdown(text_content, extensions=['fenced_code', 'tables'])
+                            messages.append({
+                                "role": role_label,
+                                "html": formatted_html
+                            })
     except Exception as parse_err:
         raise Exception(f"Error parsing conversation JSON: {parse_err}")
 
@@ -323,7 +335,6 @@ def convert_chats_to_docx(chat_sections: list, custom_title: str, show_user_mess
             role_p.paragraph_format.space_before = Pt(10)
             role_p.paragraph_format.space_after = Pt(4)
             
-            import re
             clean_text = re.sub('<[^<]+?>', '', msg['html'])
             msg_p = doc.add_paragraph()
             msg_p.add_run(clean_text)
@@ -364,7 +375,7 @@ if st.button("🔍 1. Fetch Chat Content", type="primary"):
         for i, url in enumerate(urls):
             status_text.text(f"Fetching link {i+1} of {len(urls)}...")
             try:
-                msgs = scrape_single_chat(url)
+                msgs = scrape_single_chat(url, remove_ai_closings)
                 if msgs:
                     sec_title = link_titles.get(url, f"Conversation Section #{i+1}") if input_mode == "Bulk Links (Multiple)" else (custom_title if show_header_title else "Conversation")
                     st.session_state.chat_sections.append((sec_title, msgs))
