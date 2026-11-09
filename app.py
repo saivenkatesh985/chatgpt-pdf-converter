@@ -105,7 +105,7 @@ else:
 output_filename = st.text_input("Output Filename", value="chatgpt_export")
 
 def scrape_single_chat(url: str) -> list:
-    """Scrapes and cleans messages from a single share link with robust fallbacks."""
+    """Scrapes and cleans messages from a single share link."""
     clean_url = url.split("?")[0].strip()
     if not clean_url:
         return []
@@ -140,7 +140,7 @@ def scrape_single_chat(url: str) -> list:
         page = context.new_page()
 
         try:
-            page.goto(clean_url, wait_until="domcontentloaded", timeout=60000)
+            page.goto(clean_url, wait_until="networkidle", timeout=60000)
             page.wait_for_selector("main, div", timeout=25000)
         except Exception as inner_err:
             browser.close()
@@ -172,29 +172,46 @@ def scrape_single_chat(url: str) -> list:
 
         messages = page.evaluate("""() => {
             const turns = [];
-            let blocks = document.querySelectorAll('.markdown, [data-message-author-role], article');
-            
-            if (!blocks || blocks.length === 0) {
-                blocks = document.querySelectorAll('p');
-            }
-
-            blocks.forEach((block, index) => {
-                const clone = block.cloneNode(true);
-                clone.querySelectorAll('button, input, form, select, textarea, svg, nav, header, aside, template, script, style, [data-testid*="source"], .search-result, sup').forEach(n => n.remove());
-                
-                clone.querySelectorAll('*').forEach(el => {
-                    el.removeAttribute('class');
-                    el.removeAttribute('style');
-                });
-                
-                const htmlContent = clone.innerHTML.trim();
-                if (htmlContent.length > 5) {
-                    turns.push({
-                        role: index % 2 === 0 ? 'User' : 'ChatGPT',
-                        html: htmlContent
+            const markdownBlocks = document.querySelectorAll('.markdown');
+            if (markdownBlocks && markdownBlocks.length > 0) {
+                markdownBlocks.forEach((block, index) => {
+                    const clone = block.cloneNode(true);
+                    clone.querySelectorAll('button, input, form, select, textarea, svg, nav, header, aside, template, script, style, [data-testid*="source"], .search-result, sup').forEach(n => n.remove());
+                    clone.querySelectorAll('span, div').forEach(el => {
+                        const text = el.textContent.trim();
+                        if ((el.querySelector('svg') || text.includes('_8th_') || text.includes('.pdf')) && el.children.length <= 2) {
+                            el.remove();
+                        }
                     });
-                }
-            });
+                    const paragraphs = clone.querySelectorAll('p');
+                    paragraphs.forEach(p => {
+                        if (p.textContent.includes("If you want, I can")) {
+                            let next = p.nextElementSibling;
+                            while (next) {
+                                let toRemove = next;
+                                next = next.nextElementSibling;
+                                toRemove.remove();
+                            }
+                            p.remove();
+                        }
+                    });
+                    clone.querySelectorAll('li').forEach(li => {
+                        if (li.textContent.trim().length === 0) {
+                            li.remove();
+                        }
+                    });
+                    clone.querySelectorAll('*').forEach(el => {
+                        el.removeAttribute('class');
+                        el.removeAttribute('style');
+                    });
+                    if (clone.innerHTML.trim().length > 0) {
+                        turns.push({
+                            role: index % 2 === 0 ? 'User' : 'ChatGPT',
+                            html: clone.innerHTML
+                        });
+                    }
+                });
+            }
             return turns;
         }""")
         
