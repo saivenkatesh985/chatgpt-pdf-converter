@@ -1,23 +1,11 @@
 import os
 import tempfile
 import datetime
-import subprocess
-import sys
+import requests
 import streamlit as st
-from playwright.sync_api import sync_playwright
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-
-# --- Automatically install playwright browsers on cloud deployment ---
-@st.cache_resource
-def install_playwright():
-    try:
-        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-    except Exception as e:
-        print(f"Playwright browser install notice: {e}")
-
-install_playwright()
 
 # Page config
 st.set_page_config(page_title="ChatGPT Document Customizer", page_icon="📄", layout="wide")
@@ -54,8 +42,7 @@ margin_mm = st.sidebar.number_input("Page Margins (mm)", min_value=0, max_value=
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Advanced Layout Settings")
 
-export_format = st.sidebar.selectbox("Export Format Type", ["Word Document (.docx)", "PDF Document (.pdf)", "Markdown Document (.md)", "HTML Webpage (.html)"])
-page_size = st.sidebar.selectbox("PDF Paper Size (if PDF selected)", ["A4", "Letter"])
+export_format = st.sidebar.selectbox("Export Format Type", ["Word Document (.docx)", "Markdown Document (.md)", "HTML Webpage (.html)"])
 show_user_messages = st.sidebar.checkbox("Include User Messages", value=True)
 show_header_title = st.sidebar.checkbox("Include Document Title Header", value=True)
 custom_title = st.sidebar.text_input("Document Title Text", value="ChatGPT Conversation Export")
@@ -105,7 +92,7 @@ else:
 output_filename = st.text_input("Output Filename", value="chatgpt_export")
 
 def scrape_single_chat(url: str) -> list:
-    """Scrapes and cleans messages from a single share link with anti-bot headers and resilient selectors."""
+    """Fetches chat content directly via ChatGPT's backend share API, bypassing browser bot blocks."""
     clean_url = url.split("?")[0].strip()
     if not clean_url:
         return []
@@ -113,83 +100,54 @@ def scrape_single_chat(url: str) -> list:
     if "/g/" in clean_url or "g-p-" in clean_url:
         raise Exception(f"Custom GPT links require login: {clean_url}")
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-gpu",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-infobars",
-                "--window-size=1280,800"
-            ]
-        )
+    # Extract the share ID from the URL
+    parts = clean_url.rstrip("/").split("/")
+    share_id = parts[-1]
+    
+    if not share_id or len(share_id) < 10:
+        raise Exception(f"Invalid share link format: {clean_url}")
+
+    api_endpoint = f"https://chatgpt.com/backend-api/share/{share_id}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json"
+    }
+
+    try:
+        response = requests.get(api_endpoint, headers=headers, timeout=15)
+        if response.status_code == 404:
+            raise Exception("Share link not found or expired.")
+        if response.status_code != 200:
+            raise Exception(f"API returned status code {response.status_code}")
         
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800},
-            locale="en-US",
-            extra_http_headers={
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Referer": "https://chatgpt.com/"
-            }
-        )
-        
-        context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            window.navigator.chrome = { runtime: {} };
-            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-        """)
+        data = response.json()
+    except Exception as e:
+        raise Exception(f"Failed to fetch conversation data: {e}")
 
-        page = context.new_page()
+    messages = []
+    try:
+        mapping = data.get("mapping", {})
+        for node_id, node_data in mapping.items():
+            message = node_data.get("message")
+            if message:
+                author = message.get("author", {}).get("role")
+                if author in ["user", "assistant"]:
+                    content_parts = message.get("content", {}).get("parts", [])
+                    text_content = "".join([str(p) for p in content_parts if isinstance(p, str)])
+                    if text_content.strip():
+                        role_label = "User" if author == "user" else "ChatGPT"
+                        formatted_html = f"<p>{text_content.replace(chr(10), '<br>')}</p>"
+                        messages.append({
+                            "role": role_label,
+                            "html": formatted_html
+                        })
+    except Exception as parse_err:
+        raise Exception(f"Error parsing conversation JSON: {parse_err}")
 
-        try:
-            page.goto(clean_url, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_selector("main, div", timeout=25000)
-        except Exception as inner_err:
-            browser.close()
-            raise Exception(f"Could not load {clean_url}. (Details: {inner_err})")
+    if not messages:
+        raise Exception("No messages found in this share link.")
 
-        page.wait_for_timeout(4000) # Give extra time for React hydration
-
-        page_text = page.inner_text("body")
-        if "Log in to get answers" in page_text or ("Log in or sign up" in page_text and "conversation" not in page_text.lower()):
-            browser.close()
-            raise Exception(f"OpenAI presented a login wall or bot challenge for: {clean_url}")
-
-        messages = page.evaluate("""() => {
-            const turns = [];
-            let blocks = document.querySelectorAll('.markdown, [data-message-author-role], article');
-            
-            if (!blocks || blocks.length === 0) {
-                blocks = document.querySelectorAll('p');
-            }
-
-            blocks.forEach((block, index) => {
-                const clone = block.cloneNode(true);
-                clone.querySelectorAll('button, input, form, select, textarea, svg, nav, header, aside, template, script, style, [data-testid*="source"], .search-result, sup').forEach(n => n.remove());
-                
-                clone.querySelectorAll('*').forEach(el => {
-                    el.removeAttribute('class');
-                    el.removeAttribute('style');
-                });
-                
-                const htmlContent = clone.innerHTML.trim();
-                if (htmlContent.length > 5) {
-                    turns.push({
-                        role: index % 2 === 0 ? 'User' : 'ChatGPT',
-                        html: htmlContent
-                    });
-                }
-            });
-            return turns;
-        }""")
-        
-        browser.close()
-        return messages
+    return messages
 
 def build_html_document(chat_sections: list, theme: str, font_style: str, font_size: str, line_height: float, paragraph_spacing: int, show_user_messages: bool, show_header_title: bool, custom_title: str, header_alignment: str, show_dividers: bool, show_timestamp: bool, footer_text: str, chosen_accent: str, block_radius: str, margin_val: int) -> str:
     """Builds a combined HTML document using custom numeric margin padding."""
@@ -313,35 +271,6 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
     """
     return full_html
 
-def convert_html_to_pdf_bytes(full_html: str, margin_val: int, page_format: str) -> bytes:
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-gpu",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage"
-            ]
-        )
-        page = browser.new_page()
-        page.set_content(full_html, wait_until="load")
-        
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            temp_path = tmp.name
-
-        m_str = f"{margin_val}mm"
-        pdf_margins = {"top": m_str, "bottom": m_str, "left": m_str, "right": m_str}
-
-        page.pdf(path=temp_path, format=page_format, margin=pdf_margins, print_background=True)
-        browser.close()
-
-    with open(temp_path, "rb") as f:
-        pdf_bytes = f.read()
-    if os.path.exists(temp_path):
-        os.remove(temp_path)
-    return pdf_bytes
-
 def convert_chats_to_markdown(chat_sections: list, custom_title: str) -> str:
     md_content = f"# {custom_title}\n\n"
     for sec_title, messages in chat_sections:
@@ -426,7 +355,7 @@ if st.button("🔍 1. Fetch Chat Content", type="primary"):
         
         failed_links = []
         for i, url in enumerate(urls):
-            status_text.text(f"Scraping link {i+1} of {len(urls)}...")
+            status_text.text(f"Fetching link {i+1} of {len(urls)}...")
             try:
                 msgs = scrape_single_chat(url)
                 if msgs:
@@ -440,7 +369,7 @@ if st.button("🔍 1. Fetch Chat Content", type="primary"):
         progress_bar.empty()
         
         if st.session_state.chat_sections:
-            st.success(f"Successfully scraped {len(st.session_state.chat_sections)} conversation(s)!")
+            st.success(f"Successfully fetched {len(st.session_state.chat_sections)} conversation(s)!")
             if failed_links:
                 st.warning(f"Failed to load {len(failed_links)} link(s):\n" + "\n".join(failed_links))
         else:
@@ -480,11 +409,6 @@ if st.session_state.chat_sections:
                     file_data = convert_chats_to_docx(st.session_state.chat_sections, custom_title, show_user_messages, show_timestamp, footer_text)
                     mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     final_name = f"{base_filename}.docx"
-            elif "PDF" in export_format:
-                with st.spinner("Compiling PDF document..."):
-                    file_data = convert_html_to_pdf_bytes(live_preview_html, margin_mm, page_size)
-                    mime_type = "application/pdf"
-                    final_name = f"{base_filename}.pdf"
             elif "Markdown" in export_format:
                 with st.spinner("Generating Markdown file..."):
                     md_text = convert_chats_to_markdown(st.session_state.chat_sections, custom_title)
