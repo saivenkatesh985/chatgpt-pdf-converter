@@ -492,15 +492,17 @@ def build_html_document(
             f'<li><a href="#section-{idx}" style="color: {chosen_accent};'
             f' text-decoration: none;">{sec_title}</a></li>'
             for idx, (sec_title, _) in enumerate(active_sections)
+            if sec_title and sec_title.strip()
         ])
-        toc_html = f'''
-        <div style="background-color: {code_bg}; border: 1px solid {border_color}; padding: 16px 20px; border-radius: 8px; margin-bottom: 30px;">
-            <div style="font-weight: bold; margin-bottom: 8px; font-size: 1.1em;">📑 Table of Contents</div>
-            <ul style="margin: 0; padding-left: 20px;">
-                {toc_items}
-            </ul>
-        </div>
-        '''
+        if toc_items:
+            toc_html = f'''
+            <div style="background-color: {code_bg}; border: 1px solid {border_color}; padding: 16px 20px; border-radius: 8px; margin-bottom: 30px;">
+                <div style="font-weight: bold; margin-bottom: 8px; font-size: 1.1em;">📑 Table of Contents</div>
+                <ul style="margin: 0; padding-left: 20px;">
+                    {toc_items}
+                </ul>
+            </div>
+            '''
 
     watermark_html = (
         f'''
@@ -544,7 +546,7 @@ def build_html_document(
     document_body_html = ""
     for idx, (sec_title, messages) in enumerate(active_sections):
         section_id = f"section-{idx}"
-        if len(active_sections) > 1 or sec_title:
+        if sec_title and sec_title.strip():
             document_body_html += f'''
             <div id="{section_id}" style="font-size: 1.2em; font-weight: bold; color: {chosen_accent}; margin-top: 40px; margin-bottom: 20px; border-bottom: 1px dashed {border_color}; padding-bottom: 8px;">
                 {sec_title}
@@ -672,7 +674,7 @@ def convert_chats_to_markdown(
     )
     md_content = f"# {custom_title}\n\n" if custom_title and custom_title.strip() else ""
     for sec_title, messages in active_sections:
-        if sec_title:
+        if sec_title and sec_title.strip():
             md_content += f"## {sec_title}\n\n"
         for msg in messages:
             md_content += f"### **{msg['role']}**\n\n{msg['html']}\n\n---\n\n"
@@ -729,7 +731,7 @@ def convert_chats_to_docx(
         ts_p.paragraph_format.space_after = Pt(18)
 
     for sec_title, messages in active_sections:
-        if sec_title:
+        if sec_title and sec_title.strip():
             sec_p = doc.add_paragraph()
             sec_run = sec_p.add_run(sec_title)
             sec_run.bold = True
@@ -839,7 +841,7 @@ with tab_input:
                         sec_title = (
                             link_titles.get(url, f"Conversation Section #{i+1}")
                             if input_mode == "Bulk Links (Multiple)"
-                            else (custom_title if show_header_title and custom_title else "Conversation")
+                            else (custom_title if (show_header_title and custom_title and custom_title.strip()) else "")
                         )
                         st.session_state.chat_sections.append((sec_title, msgs))
                 except Exception as e:
