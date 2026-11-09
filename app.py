@@ -27,21 +27,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📄 ChatGPT Link to Multi-Format Document & Preview")
-st.markdown("Transform single or multiple public ChatGPT conversations into professionally styled Word, PDF, Markdown, or HTML documents!")
+st.markdown("Transform single or multiple public ChatGPT conversations into professionally styled Word, Markdown, or HTML documents with advanced customization options!")
 
 # --- Sidebar Customization Controls ---
-st.sidebar.header("🎨 Customization Options")
+st.sidebar.header("🎨 Customization & Layout Studio")
 
 theme = st.sidebar.selectbox("Color Theme", ["White", "Dark", "Note", "Study"])
 font_style = st.sidebar.selectbox("Font Style", ["Sans-serif", "Serif", "Monospace"])
 
 font_size = st.sidebar.text_input("Font Size (e.g., 14px, 16px, 1.1rem)", value="16px")
-
-# Custom numeric margin input in millimeters
 margin_mm = st.sidebar.number_input("Page Margins (mm)", min_value=0, max_value=50, value=15, step=1)
+max_content_width = st.sidebar.slider("Max Content Width (px)", min_value=600, max_value=1400, value=900, step=50)
 
 st.sidebar.markdown("---")
-st.sidebar.header("⚙️ Advanced Layout Settings")
+st.sidebar.header("⚙️ Advanced Styling & Structure")
 
 export_format = st.sidebar.selectbox("Export Format Type", ["Word Document (.docx)", "Markdown Document (.md)", "HTML Webpage (.html)"])
 show_user_messages = st.sidebar.checkbox("Include User Messages", value=True)
@@ -64,6 +63,7 @@ chosen_accent = accent_color_map[chosen_accent_label]
 line_height = st.sidebar.slider("Line Spacing", min_value=1.2, max_value=2.0, value=1.6, step=0.1)
 paragraph_spacing = st.sidebar.slider("Paragraph Spacing (px)", min_value=4, max_value=24, value=12, step=2)
 block_radius = st.sidebar.selectbox("User Message Box Corners", ["Sharp (0px)", "Rounded (6px)", "Pill (12px)"])
+enable_box_shadow = st.sidebar.checkbox("Add Subtle Shadow to User Boxes", value=True)
 
 # --- Main Form Mode Selector & Inputs ---
 input_mode = st.radio("Select Input Mode:", ["Single Link", "Bulk Links (Multiple)"], horizontal=True)
@@ -149,8 +149,8 @@ def scrape_single_chat(url: str) -> list:
 
     return messages
 
-def build_html_document(chat_sections: list, theme: str, font_style: str, font_size: str, line_height: float, paragraph_spacing: int, show_user_messages: bool, show_header_title: bool, custom_title: str, header_alignment: str, show_dividers: bool, show_timestamp: bool, footer_text: str, chosen_accent: str, block_radius: str, margin_val: int) -> str:
-    """Builds a combined HTML document using custom numeric margin padding."""
+def build_html_document(chat_sections: list, theme: str, font_style: str, font_size: str, line_height: float, paragraph_spacing: int, show_user_messages: bool, show_header_title: bool, custom_title: str, header_alignment: str, show_dividers: bool, show_timestamp: bool, footer_text: str, chosen_accent: str, block_radius: str, margin_val: int, max_width: int, shadow_enabled: bool) -> str:
+    """Builds a combined HTML document using custom numeric margin padding and layout settings."""
     if theme == "Dark":
         bg_color, text_color = "#121212", "#e0e0e0"
         user_bg, user_text = "#1a332c", "#a3e4d7"
@@ -181,8 +181,8 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
         "Pill (12px)": "12px"
     }
     chosen_radius = radius_map.get(block_radius, "6px")
-
     chosen_padding = f"{margin_val}mm"
+    box_shadow_css = "box-shadow: 0 4px 12px rgba(0,0,0,0.06);" if shadow_enabled else ""
 
     timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M") if show_timestamp else ""
 
@@ -209,7 +209,7 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
                 if not show_user_messages:
                     continue
                 document_body_html += f"""
-                <div style="background-color: {user_bg} !important; border-left: 4px solid {chosen_accent}; padding: 14px 18px; margin: 20px 0; border-radius: 0 {chosen_radius} {chosen_radius} 0; color: {user_text} !important;">
+                <div style="background-color: {user_bg} !important; border-left: 4px solid {chosen_accent}; padding: 14px 18px; margin: 20px 0; border-radius: 0 {chosen_radius} {chosen_radius} 0; color: {user_text} !important; {box_shadow_css}">
                     <div style="font-size: {font_size}; color: {user_text} !important;">{msg["html"]}</div>
                 </div>
                 {divider_html}
@@ -242,6 +242,11 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
                 font-size: {font_size};
                 line-height: {line_height};
                 margin: 0;
+                padding: 0;
+            }}
+            .page-wrapper {{
+                max-width: {max_width}px;
+                margin: 0 auto;
                 padding: {chosen_padding};
                 word-wrap: break-word;
                 overflow-wrap: break-word;
@@ -263,9 +268,11 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
         </style>
     </head>
     <body>
-        {header_html}
-        {document_body_html}
-        {footer_html}
+        <div class="page-wrapper">
+            {header_html}
+            {document_body_html}
+            {footer_html}
+        </div>
     </body>
     </html>
     """
@@ -382,7 +389,7 @@ if st.session_state.chat_sections:
     live_preview_html = build_html_document(
         st.session_state.chat_sections, theme, font_style, font_size, line_height, paragraph_spacing,
         show_user_messages, show_header_title, custom_title, header_alignment, 
-        show_dividers, show_timestamp, footer_text, chosen_accent, block_radius, margin_mm
+        show_dividers, show_timestamp, footer_text, chosen_accent, block_radius, margin_mm, max_content_width, enable_box_shadow
     )
     
     # --- LIVE PREVIEW CONTAINER ---
