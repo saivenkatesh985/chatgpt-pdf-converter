@@ -1,4 +1,4 @@
-code_content = '''import datetime
+import datetime
 import os
 import re
 import tempfile
@@ -10,12 +10,19 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
+from playwright.sync_api import sync_playwright
 
-# ReportLab imports for native PDF generation
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+# --- Automatically install playwright chromium browser on cloud deployment ---
+@st.cache_resource
+def install_playwright():
+    try:
+        import subprocess
+        import sys
+        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+    except Exception as e:
+        print(f"Playwright browser install notice: {e}")
+
+install_playwright()
 
 # Page config
 st.set_page_config(
@@ -24,7 +31,7 @@ st.set_page_config(
 
 # Custom UI polish
 st.markdown(
-    \"\"\"
+    """
     <style>
         .stButton>button {
             border-radius: 8px;
@@ -39,7 +46,7 @@ st.markdown(
             padding-top: 2rem;
         }
     </style>
-\"\"\",
+""",
     unsafe_allow_html=True,
 )
 
@@ -155,7 +162,7 @@ if "chat_sections" not in st.session_state:
 def clean_assistant_text(text: str) -> str:
     text = re.sub(r".*?", "", text)
     pattern = re.compile(
-        r"\\n+(?:If you want, I can:|Would you like me to:|Let me know if you).*$",
+        r"\n+(?:If you want, I can:|Would you like me to:|Let me know if you).*$",
         re.DOTALL | re.IGNORECASE,
     )
     return pattern.sub("", text).strip()
@@ -163,43 +170,43 @@ def clean_assistant_text(text: str) -> str:
 
 def parse_math_expression_blocks(text: str) -> str:
     """Robustly parses LaTeX tags, replaces arrows with UTF-8, and formats A* formulas & path blocks cleanly."""
-    text = text.replace(r'\\tilde{[f}', 'f').replace(r'\\tilde{f}', 'f')
-    text = text.replace(r'\\rightarrow', ' → ').replace(r'\\to', ' → ')
-    text = re.sub(r'\\\\text\\{([^}]+)\\}', r'\\1', text)
+    text = text.replace(r'\tilde{[f}', 'f').replace(r'\tilde{f}', 'f')
+    text = text.replace(r'\rightarrow', ' → ').replace(r'\to', ' → ')
+    text = re.sub(r'\\text\{([^}]+)\}', r'\1', text)
 
     def boxed_replacer(match):
-        formula = match.group(1).replace(r'\\text{', '').replace('}', '')
-        return f\'\'\'
+        formula = match.group(1).replace(r'\text{', '').replace('}', '')
+        return f'''
         <div style="font-family: Consolas, Monaco, monospace; background: rgba(37, 99, 235, 0.08); 
                     border: 1px solid #2563eb; padding: 8px 14px; margin: 10px 0; 
                     border-radius: 6px; font-weight: bold; text-align: center; font-size: 1.05em;">
             {formula}
         </div>
-        \'\'\'
-    text = re.sub(r'\\[\\s*\\\\boxed\\{([^}]+)\\}\\s*\\]', boxed_replacer, text)
-    text = re.sub(r'\\\\boxed\\{([^}]+)\\}', r'\\1', text)
+        '''
+    text = re.sub(r'\[\s*\\boxed\{([^}]+)\}\s*\]', boxed_replacer, text)
+    text = re.sub(r'\\boxed\{([^}]+)\}', r'\1', text)
 
     def path_replacer(match):
         path_expr = match.group(1).strip()
-        return f\'\'\'
+        return f'''
         <div style="font-family: Consolas, Monaco, monospace; background: rgba(16, 163, 127, 0.08); 
                     border-left: 3px solid #10a37f; padding: 6px 12px; margin: 8px 0; 
                     border-radius: 4px; font-weight: bold; font-size: 1em; display: inline-block; width: 100%;">
             Path Sequence: {path_expr}
         </div>
-        \'\'\'
-    text = re.sub(r'\\[\\s*([A-Z]\\s*→\\s*[A-Z](?:\\s*→\\s*[A-Z])+)\\s*\\]', path_replacer, text)
+        '''
+    text = re.sub(r'\[\s*([A-Z]\s*→\s*[A-Z](?:\s*→\s*[A-Z])+)\s*\]', path_replacer, text)
 
     def math_replacer(match):
-        expr = match.group(1).replace(r'\\quad', '&nbsp;&nbsp;&nbsp;&nbsp;').strip()
-        return f\'\'\'
+        expr = match.group(1).replace(r'\quad', '&nbsp;&nbsp;&nbsp;&nbsp;').strip()
+        return f'''
         <div style="font-family: Consolas, Monaco, monospace; background: rgba(37, 99, 235, 0.05); 
                     border-left: 3px solid #2563eb; padding: 6px 12px; margin: 6px 0; 
                     border-radius: 4px; font-size: 0.95em; display: inline-block; width: 100%;">
             <code>{expr}</code>
         </div>
-        \'\'\'
-    text = re.sub(r'\\[\\s*([^\\[\\]]+?(?:=|\\-|[a-zA-Z]\\()[^\\[\\]]*?)\\s*\\]', math_replacer, text)
+        '''
+    text = re.sub(r'\[\s*([^\[\]]+?(?:=|\+|\-|[a-zA-Z]\()[^\[\]]*?)\s*\]', math_replacer, text)
 
     return text
 
@@ -326,142 +333,29 @@ def get_filtered_sections(
     return filtered_sections
 
 
-def build_pdf_document(
-    chat_sections: list,
-    custom_title: str,
-    message_filter_role: str,
-    selection_mode: str,
-    allowed_ids: list,
-    show_timestamp: bool,
-    footer_text: str,
-    include_page_nos: bool,
-    footer_wm: str,
-) -> bytes:
-    active_sections = get_filtered_sections(
-        chat_sections, message_filter_role, selection_mode, allowed_ids
-    )
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        temp_path = tmp.name
-
-    doc = SimpleDocTemplate(
-        temp_path,
-        pagesize=letter,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=40,
-        bottomMargin=50,
-    )
-    styles = getSampleStyleSheet()
-    story = []
-
-    title_style = ParagraphStyle(
-        "TitleStyle",
-        parent=styles["Heading1"],
-        fontSize=18,
-        textColor=colors.HexColor("#111111"),
-        spaceAfter=10,
-    )
-    sub_style = ParagraphStyle(
-        "SubStyle",
-        parent=styles["Normal"],
-        fontSize=9,
-        textColor=colors.HexColor("#777777"),
-        spaceAfter=15,
-    )
-    sec_style = ParagraphStyle(
-        "SecStyle",
-        parent=styles["Heading2"],
-        fontSize=14,
-        textColor=colors.HexColor("#2563eb"),
-        spaceBefore=12,
-        spaceAfter=8,
-    )
-    role_style = ParagraphStyle(
-        "RoleStyle",
-        parent=styles["Normal"],
-        fontSize=11,
-        fontName="Helvetica-Bold",
-        textColor=colors.HexColor("#333333"),
-        spaceBefore=8,
-        spaceAfter=4,
-    )
-    body_style = ParagraphStyle(
-        "BodyStyle",
-        parent=styles["Normal"],
-        fontSize=10,
-        textColor=colors.HexColor("#222222"),
-        spaceAfter=10,
-        leading=14,
-    )
-    math_box_style = ParagraphStyle(
-        "MathBoxStyle",
-        parent=styles["Normal"],
-        fontSize=9.5,
-        fontName="Courier",
-        textColor=colors.HexColor("#2563eb"),
-        backColor=colors.HexColor("#eff6ff"),
-        borderColor=colors.HexColor("#2563eb"),
-        borderWidth=1,
-        borderPadding=6,
-        spaceBefore=6,
-        spaceAfter=6,
-    )
-    footer_style = ParagraphStyle(
-        "FooterStyle",
-        parent=styles["Normal"],
-        fontSize=8,
-        textColor=colors.HexColor("#777777"),
-        alignment=1,
-    )
-
-    if custom_title:
-        story.append(Paragraph(custom_title, title_style))
-    if show_timestamp:
-        story.append(
-            Paragraph(
-                f"Exported on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                sub_style,
-            )
+def build_pdf_document(full_html: str, margin_val: int) -> bytes:
+    """Renders the exact live HTML preview into a PDF using headless Playwright for 100% fidelity."""
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-gpu",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage"
+            ]
         )
+        page = browser.new_page()
+        page.set_content(full_html, wait_until="load")
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            temp_path = tmp.name
 
-    for sec_title, messages in active_sections:
-        if sec_title:
-            story.append(Paragraph(sec_title, sec_style))
-        for msg in messages:
-            role = msg["role"]
-            story.append(Paragraph(f"<b>{role}:</b>", role_style))
-            
-            html_content = msg["html"]
-            paragraphs = re.split(r'(?i)</?(?:div|p|br|code)[^>]*>', html_content)
-            for p_text in paragraphs:
-                p_clean = p_text.strip()
-                if p_clean:
-                    if "font-family: Consolas" in html_content or "border-left:" in html_content or "[" in p_clean:
-                        story.append(Paragraph(p_clean, math_box_style))
-                    else:
-                        story.append(Paragraph(p_clean, body_style))
-            story.append(Spacer(1, 6))
+        m_str = f"{margin_val}mm"
+        pdf_margins = {"top": m_str, "bottom": m_str, "left": m_str, "right": m_str}
 
-    if footer_text:
-        story.append(Spacer(1, 20))
-        story.append(Paragraph(footer_text, footer_style))
-
-    def add_footer_canvas(canvas, doc):
-        canvas.saveState()
-        canvas.setFont("Helvetica", 8)
-        canvas.setFillColor(colors.HexColor("#888888"))
-
-        if footer_wm:
-            canvas.drawString(40, 25, footer_wm)
-
-        if include_page_nos:
-            canvas.drawRightString(letter[0] - 40, 25, f"Page {doc.page}")
-
-        canvas.restoreState()
-
-    doc.build(
-        story, onFirstPage=add_footer_canvas, onLaterPages=add_footer_canvas
-    )
+        page.pdf(path=temp_path, format="Letter", margin=pdf_margins, print_background=True)
+        browser.close()
 
     with open(temp_path, "rb") as f:
         pdf_bytes = f.read()
@@ -569,12 +463,12 @@ def build_html_document(
     )
 
     header_html = (
-        f\'\'\'
+        f'''
     <div style="font-size: 1.4em; font-weight: bold; text-align: {header_alignment.lower()}; border-bottom: 2px solid {chosen_accent}; padding-bottom: 10px; margin-bottom: 24px; color: {text_color} !important;">
         {custom_title}
         {timestamp_html}
     </div>
-    \'\'\'
+    '''
         if show_header_title
         else ""
     )
@@ -586,18 +480,18 @@ def build_html_document(
             f' text-decoration: none;">{sec_title}</a></li>'
             for idx, (sec_title, _) in enumerate(active_sections)
         ])
-        toc_html = f\'\'\'
+        toc_html = f'''
         <div style="background-color: {code_bg}; border: 1px solid {border_color}; padding: 16px 20px; border-radius: 8px; margin-bottom: 30px;">
             <div style="font-weight: bold; margin-bottom: 8px; font-size: 1.1em;">📑 Table of Contents</div>
             <ul style="margin: 0; padding-left: 20px;">
                 {toc_items}
             </ul>
         </div>
-        \'\'\'
+        '''
 
     watermark_html = (
-        f\'\'\'
-    <div style="position: fixed; top: 50%; left: 50%; transform:\'\'\'
+        f'''
+    <div style="position: fixed; top: 50%; left: 50%; transform:'''
         " translate(-50%, -50%) rotate(-30deg); font-size: 5rem; font-weight:"
         f" bold; color: {text_color}; opacity: {watermark_alpha};"
         ' pointer-events: none; z-index: 9999; white-space: nowrap;">'
@@ -612,7 +506,7 @@ def build_html_document(
         else '""'
     )
 
-    page_num_css = f\'\'\'
+    page_num_css = f'''
     @page {{
         @bottom-left {{
             content: {page_bottom_left_content};
@@ -625,10 +519,10 @@ def build_html_document(
             color: #888888;
         }}
     }}
-    \'\'\'
+    '''
 
     divider_html = (
-        f\'\'\'<hr style="border: none; border-top: 1px solid {border_color};\'\'\'
+        f'''<hr style="border: none; border-top: 1px solid {border_color};'''
         ' margin: 24px 0;" />'
     ) if show_dividers else ""
 
@@ -638,58 +532,58 @@ def build_html_document(
     for idx, (sec_title, messages) in enumerate(active_sections):
         section_id = f"section-{idx}"
         if len(active_sections) > 1 or sec_title:
-            document_body_html += f\'\'\'
+            document_body_html += f'''
             <div id="{section_id}" style="font-size: 1.2em; font-weight: bold; color: {chosen_accent}; margin-top: 40px; margin-bottom: 20px; border-bottom: 1px dashed {border_color}; padding-bottom: 8px;">
                 {sec_title}
             </div>
-            \'\'\'
+            '''
         for msg in messages:
             role = msg["role"]
             if role == "User":
                 if is_chat_bubbles:
-                    document_body_html += f\'\'\'
+                    document_body_html += f'''
                     <div style="display: flex; justify-content: flex-end; margin: 16px 0;">
                         <div style="background-color: {user_bg} !important; border: 1px solid {border_color}; padding: 14px 18px; max-width: 85%; border-radius: {chosen_radius} {chosen_radius} 0 {chosen_radius}; color: {user_text} !important; {box_shadow_css}">
                             <div style="font-size: 0.75em; font-weight: bold; margin-bottom: 4px; opacity: 0.8;">You</div>
                             <div style="font-size: {font_size}; color: {user_text} !important;">{msg["html"]}</div>
                         </div>
                     </div>
-                    \'\'\'
+                    '''
                 else:
-                    document_body_html += f\'\'\'
+                    document_body_html += f'''
                     <div style="background-color: {user_bg} !important; border-left: 4px solid {chosen_accent}; padding: 14px 18px; margin: 20px 0; border-radius: 0 {chosen_radius} {chosen_radius} 0; color: {user_text} !important; {box_shadow_css}">
                         <div style="font-size: {font_size}; color: {user_text} !important;">{msg["html"]}</div>
                     </div>
                     {divider_html}
-                    \'\'\'
+                    '''
             else:
                 if is_chat_bubbles:
-                    document_body_html += f\'\'\'
+                    document_body_html += f'''
                     <div style="display: flex; justify-content: flex-start; margin: 16px 0;">
                         <div style="background-color: {code_bg} !important; border: 1px solid {border_color}; padding: 14px 18px; max-width: 85%; border-radius: {chosen_radius} {chosen_radius} {chosen_radius} 0; color: {text_color} !important; {box_shadow_css}">
                             <div style="font-size: 0.75em; font-weight: bold; margin-bottom: 4px; color: {chosen_accent};">ChatGPT</div>
                             <div style="font-size: {font_size}; color: {text_color} !important;">{msg["html"]}</div>
                         </div>
                     </div>
-                    \'\'\'
+                    '''
                 else:
-                    document_body_html += f\'\'\'
+                    document_body_html += f'''
                     <div style="margin: 20px 0; color: {text_color} !important; font-size: {font_size};">
                         {msg["html"]}
                     </div>
                     {divider_html}
-                    \'\'\'
+                    '''
 
     footer_html = (
-        f\'\'\'
-    <div style="margin-top: 40px; padding-top: 15px; border-top: 1px dashed\'\'\'
+        f'''
+    <div style="margin-top: 40px; padding-top: 15px; border-top: 1px dashed'''
         f" {border_color}; font-size: 0.85em; text-align: center; color:"
         f' {text_color}; opacity: 0.8;">'
         f" {footer_text}"
         " </div>"
     ) if footer_text else ""
 
-    full_html = f\'\'\'
+    full_html = f'''
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -749,7 +643,7 @@ def build_html_document(
         </div>
     </body>
     </html>
-    \'\'\'
+    '''
     return full_html
 
 
@@ -763,12 +657,12 @@ def convert_chats_to_markdown(
     active_sections = get_filtered_sections(
         chat_sections, message_filter_role, selection_mode, allowed_ids
     )
-    md_content = f"# {custom_title}\\n\\n"
+    md_content = f"# {custom_title}\n\n"
     for sec_title, messages in active_sections:
         if sec_title:
-            md_content += f"## {sec_title}\\n\\n"
+            md_content += f"## {sec_title}\n\n"
         for msg in messages:
-            md_content += f"### **{msg['role']}**\\n\\n{msg['html']}\\n\\n---\\n\\n"
+            md_content += f"### **{msg['role']}**\n\n{msg['html']}\n\n---\n\n"
     return md_content
 
 
@@ -797,7 +691,7 @@ def convert_chats_to_docx(
         r_wm.font.size = Pt(8.5)
         r_wm.font.color.rgb = RGBColor(120, 120, 120)
         if include_page_nos:
-            p.add_run("\\t\\t")
+            p.add_run("\t\t")
 
     if include_page_nos:
         r_page = p.add_run("Page ")
@@ -889,7 +783,7 @@ with tab_input:
         share_urls_textarea = st.text_area(
             "ChatGPT Share Links (Paste one link per line)",
             placeholder=(
-                "https://chatgpt.com/share/...\\nhttps://chatgpt.com/share/..."
+                "https://chatgpt.com/share/...\nhttps://chatgpt.com/share/..."
             ),
             height=100,
         )
@@ -902,7 +796,7 @@ with tab_input:
             horizontal=True,
         )
 
-        raw_urls = [u.strip() for u in share_urls_textarea.split("\\n") if u.strip()]
+        raw_urls = [u.strip() for u in share_urls_textarea.split("\n") if u.strip()]
         if raw_urls:
             if bulk_order.startswith("Reverse"):
                 raw_urls = raw_urls[::-1]
@@ -949,8 +843,8 @@ with tab_input:
                 )
                 if failed_links:
                     st.warning(
-                        f"Failed to load {len(failed_links)} link(s):\\n"
-                        + "\\n".join(failed_links)
+                        f"Failed to load {len(failed_links)} link(s):\n"
+                        + "\n".join(failed_links)
                     )
             else:
                 st.error(
@@ -972,7 +866,7 @@ if st.session_state.chat_sections:
     st.sidebar.markdown("---")
     st.sidebar.markdown("📊 **Document Stats**")
     st.sidebar.caption(
-        f"• Total Words: **{total_word_count:,}**\\n• Est. Reading Time:"
+        f"• Total Words: **{total_word_count:,}**\n• Est. Reading Time:"
         f" **{max(1, total_word_count // 200)} min**"
     )
 
@@ -1043,19 +937,41 @@ with tab_download:
                 if not base_filename:
                     base_filename = "chat_export"
 
+                # Generate live preview HTML on the fly for PDF/HTML exports
+                current_html = build_html_document(
+                    st.session_state.chat_sections,
+                    theme,
+                    layout_view_style,
+                    font_style,
+                    font_size,
+                    line_height,
+                    paragraph_spacing,
+                    message_filter_role,
+                    message_selection_mode,
+                    selected_message_ids,
+                    show_header_title,
+                    custom_title,
+                    header_alignment,
+                    show_dividers,
+                    show_timestamp,
+                    footer_text,
+                    chosen_accent,
+                    code_theme,
+                    block_radius,
+                    margin_mm,
+                    max_content_width,
+                    enable_box_shadow,
+                    generate_toc,
+                    watermark_text,
+                    watermark_opacity / 100.0,
+                    footer_watermark_text,
+                    show_page_numbers,
+                    custom_css_injection,
+                )
+
                 if "PDF" in export_format:
-                    with st.spinner("Compiling PDF Document..."):
-                        file_data = build_pdf_document(
-                            st.session_state.chat_sections,
-                            custom_title,
-                            message_filter_role,
-                            message_selection_mode,
-                            selected_message_ids,
-                            show_timestamp,
-                            footer_text,
-                            show_page_numbers,
-                            footer_watermark_text,
-                        )
+                    with st.spinner("Compiling high-fidelity PDF Document..."):
+                        file_data = build_pdf_document(current_html, margin_val=margin_mm)
                         mime_type = "application/pdf"
                         final_name = f"{base_filename}.pdf"
                 elif "Word" in export_format:
@@ -1089,36 +1005,7 @@ with tab_download:
                         final_name = f"{base_filename}.md"
                 else:  # HTML
                     with st.spinner("Generating HTML file..."):
-                        file_data = build_html_document(
-                            st.session_state.chat_sections,
-                            theme,
-                            layout_view_style,
-                            font_style,
-                            font_size,
-                            line_height,
-                            paragraph_spacing,
-                            message_filter_role,
-                            message_selection_mode,
-                            selected_message_ids,
-                            show_header_title,
-                            custom_title,
-                            header_alignment,
-                            show_dividers,
-                            show_timestamp,
-                            footer_text,
-                            chosen_accent,
-                            code_theme,
-                            block_radius,
-                            margin_mm,
-                    max_content_width,
-                    enable_box_shadow,
-                    generate_toc,
-                    watermark_text,
-                    watermark_opacity / 100.0,
-                    footer_watermark_text,
-                    show_page_numbers,
-                    custom_css_injection,
-                ).encode("utf-8")
+                        file_data = current_html.encode("utf-8")
                         mime_type = "text/html"
                         final_name = f"{base_filename}.html"
 
@@ -1133,8 +1020,3 @@ with tab_download:
                 st.error(f"An error occurred during file creation: {e}")
     else:
         st.info("Fetch your chats first before downloading.")
-'''
-
-with open("app.py", "w", encoding="utf-8") as f:
-    f.write(code_content)
-print("app.py generated successfully.")
