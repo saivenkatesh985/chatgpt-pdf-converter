@@ -10,19 +10,12 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
-from playwright.sync_api import sync_playwright
 
-# --- Automatically install playwright chromium browser on cloud deployment ---
-@st.cache_resource
-def install_playwright():
-    try:
-        import subprocess
-        import sys
-        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-    except Exception as e:
-        print(f"Playwright browser install notice: {e}")
-
-install_playwright()
+# ReportLab imports for native PDF generation
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 # Page config
 st.set_page_config(
@@ -169,13 +162,17 @@ def clean_assistant_text(text: str) -> str:
 
 
 def parse_math_expression_blocks(text: str) -> str:
-    """Robustly parses LaTeX tags, replaces arrows with UTF-8, and formats A* formulas & path blocks cleanly."""
+    """Robustly parses LaTeX tags, cleans stray backslashes and wrappers, replaces arrows with UTF-8, and formats formulas & math blocks cleanly."""
+    # Remove raw LaTeX block/inline math delimiters if any remain
+    text = re.sub(r'\\\s*\\\begin\{equation\}', '', text)
+    text = re.sub(r'\\\s*\\\end\{equation\}', '', text)
+    
     text = text.replace(r'\tilde{[f}', 'f').replace(r'\tilde{f}', 'f')
     text = text.replace(r'\rightarrow', ' → ').replace(r'\to', ' → ')
     text = re.sub(r'\\text\{([^}]+)\}', r'\1', text)
 
     def boxed_replacer(match):
-        formula = match.group(1).replace(r'\text{', '').replace('}', '')
+        formula = match.group(1).replace(r'\text{', '').replace('}', '').strip()
         return f'''
         <div style="font-family: Consolas, Monaco, monospace; background: rgba(37, 99, 235, 0.08); 
                     border: 1px solid #2563eb; padding: 8px 14px; margin: 10px 0; 
@@ -187,7 +184,7 @@ def parse_math_expression_blocks(text: str) -> str:
     text = re.sub(r'\\boxed\{([^}]+)\}', r'\1', text)
 
     def path_replacer(match):
-        path_expr = match.group(1).strip()
+        path_expr = match.group(1).replace('\\', '').strip()
         return f'''
         <div style="font-family: Consolas, Monaco, monospace; background: rgba(16, 163, 127, 0.08); 
                     border-left: 3px solid #10a37f; padding: 6px 12px; margin: 8px 0; 
@@ -198,7 +195,7 @@ def parse_math_expression_blocks(text: str) -> str:
     text = re.sub(r'\[\s*([A-Z]\s*→\s*[A-Z](?:\s*→\s*[A-Z])+)\s*\]', path_replacer, text)
 
     def math_replacer(match):
-        expr = match.group(1).replace(r'\quad', '&nbsp;&nbsp;&nbsp;&nbsp;').strip()
+        expr = match.group(1).replace(r'\quad', '&nbsp;&nbsp;&nbsp;&nbsp;').replace('\\', '').strip()
         return f'''
         <div style="font-family: Consolas, Monaco, monospace; background: rgba(37, 99, 235, 0.05); 
                     border-left: 3px solid #2563eb; padding: 6px 12px; margin: 6px 0; 
@@ -206,13 +203,31 @@ def parse_math_expression_blocks(text: str) -> str:
             <code>{expr}</code>
         </div>
         '''
-    text = re.sub(r'\[\s*([^\[\]]+?(?:=|\+|\-|[a-zA-Z]\()[^\[\]]*?)\s*\]', math_replacer, text)
+    text = re.sub(r'\[\s*([^\[\]]+?(?:=|\-|[a-zA-Z]\()[^\[\]]*?)\s*\]', math_replacer, text)
+
+    # Clean up trailing stray backslashes at the end of lines or equations (e.g. `f(n)=g(n)+h(n) \`)
+    text = re.sub(r'\s*\\\s*$', '', text, flags=re.MULTILINE)
 
     return text
 
 
 def parse_custom_tags_and_flowcharts(text: str) -> str:
     text = parse_math_expression_blocks(text)
+    
+    # Detect ASCII vertical flowchart blocks and wrap them in a polished styled container box
+    if '│' in text or '▼' in text:
+        lines = text.split('\n')
+        has_flow_symbols = sum(1 for l in lines if '│' in l or '▼' in l)
+        if has_flow_symbols >= 2:
+            text = f'''
+            <div style="font-family: Consolas, Monaco, monospace; background: rgba(16, 163, 127, 0.05); 
+                        border: 1px solid #10a37f; padding: 14px 18px; margin: 16px 0; 
+                        border-radius: 8px; line-height: 1.5; white-space: pre-wrap; font-size: 0.95em; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                <div style="font-weight: bold; color: #10a37f; margin-bottom: 8px; font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.5px;">📊 Flowchart & Diagram Sequence</div>
+                {text}
+            </div>
+            '''
+            
     return text
 
 
@@ -333,8 +348,14 @@ def get_filtered_sections(
     return filtered_sections
 
 
-def build_pdf_document(full_html: str, margin_val: int) -> bytes:
-    """Renders the exact live HTML preview into a PDF using headless Playwright for 100% fidelity."""
+from playwright.sync_api import sync_playwright
+
+def build_pdf_document(
+    full_html: str, 
+    margin_val: int, 
+    page_format: str = "Letter"
+) -> bytes:
+    """Renders the exact live HTML preview into a PDF using headless Playwright for 100% visual parity."""
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
@@ -354,7 +375,7 @@ def build_pdf_document(full_html: str, margin_val: int) -> bytes:
         m_str = f"{margin_val}mm"
         pdf_margins = {"top": m_str, "bottom": m_str, "left": m_str, "right": m_str}
 
-        page.pdf(path=temp_path, format="Letter", margin=pdf_margins, print_background=True)
+        page.pdf(path=temp_path, format=page_format, margin=pdf_margins, print_background=True)
         browser.close()
 
     with open(temp_path, "rb") as f:
@@ -937,41 +958,13 @@ with tab_download:
                 if not base_filename:
                     base_filename = "chat_export"
 
-                # Generate live preview HTML on the fly for PDF/HTML exports
-                current_html = build_html_document(
-                    st.session_state.chat_sections,
-                    theme,
-                    layout_view_style,
-                    font_style,
-                    font_size,
-                    line_height,
-                    paragraph_spacing,
-                    message_filter_role,
-                    message_selection_mode,
-                    selected_message_ids,
-                    show_header_title,
-                    custom_title,
-                    header_alignment,
-                    show_dividers,
-                    show_timestamp,
-                    footer_text,
-                    chosen_accent,
-                    code_theme,
-                    block_radius,
-                    margin_mm,
-                    max_content_width,
-                    enable_box_shadow,
-                    generate_toc,
-                    watermark_text,
-                    watermark_opacity / 100.0,
-                    footer_watermark_text,
-                    show_page_numbers,
-                    custom_css_injection,
-                )
-
                 if "PDF" in export_format:
-                    with st.spinner("Compiling high-fidelity PDF Document..."):
-                        file_data = build_pdf_document(current_html, margin_val=margin_mm)
+                    with st.spinner("Compiling PDF Document..."):
+                        file_data = build_pdf_document(
+                            live_preview_html,
+                            margin_val=margin_mm,
+                            page_format="Letter"
+                        )
                         mime_type = "application/pdf"
                         final_name = f"{base_filename}.pdf"
                 elif "Word" in export_format:
@@ -1005,7 +998,36 @@ with tab_download:
                         final_name = f"{base_filename}.md"
                 else:  # HTML
                     with st.spinner("Generating HTML file..."):
-                        file_data = current_html.encode("utf-8")
+                        file_data = build_html_document(
+                            st.session_state.chat_sections,
+                            theme,
+                            layout_view_style,
+                            font_style,
+                            font_size,
+                            line_height,
+                            paragraph_spacing,
+                            message_filter_role,
+                            message_selection_mode,
+                            selected_message_ids,
+                            show_header_title,
+                            custom_title,
+                            header_alignment,
+                            show_dividers,
+                            show_timestamp,
+                            footer_text,
+                            chosen_accent,
+                            code_theme,
+                            block_radius,
+                            margin_mm,
+                    max_content_width,
+                    enable_box_shadow,
+                    generate_toc,
+                    watermark_text,
+                    watermark_opacity / 100.0,
+                    footer_watermark_text,
+                    show_page_numbers,
+                    custom_css_injection,
+                ).encode("utf-8")
                         mime_type = "text/html"
                         final_name = f"{base_filename}.html"
 
