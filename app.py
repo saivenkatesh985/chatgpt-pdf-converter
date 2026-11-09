@@ -9,6 +9,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.shared import Pt, RGBColor
 
 # ReportLab imports for native PDF generation
 from reportlab.lib import colors
@@ -45,7 +46,8 @@ st.markdown(
 st.title("⬇️ ChatGPT Link to Multi-Format Document Studio")
 st.markdown(
     "Transform single or multiple public ChatGPT conversations into"
-    " professionally styled Word, Markdown, PDF, or HTML documents."
+    " professionally styled Word, Markdown, PDF, or HTML documents with advanced"
+    " custom controls."
 )
 
 # --- SIDEBAR: ORGANIZED LAYOUT STUDIO ---
@@ -69,6 +71,9 @@ with st.sidebar.expander("📌 Document & Branding", expanded=True):
   )
   footer_text = st.text_input("Custom Footer Text", value="")
   watermark_text = st.text_input("Center Page Watermark Text", value="")
+  watermark_opacity = st.slider(
+      "Watermark Opacity (%)", min_value=1, max_value=15, value=4, step=1
+  )
   footer_watermark_text = st.text_input("Bottom Footer Watermark Text", value="")
 
 with st.sidebar.expander("📐 Spacing & Geometry", expanded=False):
@@ -105,6 +110,11 @@ with st.sidebar.expander("✨ Styling, Code & Accents", expanded=False):
       "Message Box Corners", ["Sharp (0px)", "Rounded (6px)", "Pill (12px)"]
   )
   enable_box_shadow = st.checkbox("Add Subtle Shadow to Boxes", value=True)
+  custom_css_injection = st.text_area(
+      "Custom CSS Injector (Optional)",
+      placeholder="e.g., body { filter: contrast(110%); }",
+      height=70,
+  )
 
 with st.sidebar.expander("⚙️ Structure & Filters", expanded=False):
   export_format = st.selectbox(
@@ -118,14 +128,13 @@ with st.sidebar.expander("⚙️ Structure & Filters", expanded=False):
   )
 
   message_filter_role = st.selectbox(
-      "Message Role Filter",
-      ["All", "User", "Assistant"]
+      "Message Role Filter", ["All", "User", "Assistant"]
   )
 
   message_selection_mode = st.radio(
       "Inclusion Scope",
       ["All Messages", "Pick Specific Messages (Custom)"],
-      horizontal=True
+      horizontal=True,
   )
 
   enable_ai_filter = st.checkbox(
@@ -141,6 +150,7 @@ with st.sidebar.expander("⚙️ Structure & Filters", expanded=False):
 if "chat_sections" not in st.session_state:
   st.session_state.chat_sections = None
 
+
 # --- HELPER FUNCTIONS ---
 def clean_assistant_text(text: str) -> str:
   text = re.sub(r".*?", "", text)
@@ -149,6 +159,37 @@ def clean_assistant_text(text: str) -> str:
       re.DOTALL | re.IGNORECASE,
   )
   return pattern.sub("", text).strip()
+
+
+def parse_custom_grid_tags(text: str) -> str:
+  """Converts custom Svelte-like title/cell components into styled HTML grids."""
+
+  def replacer(match):
+    cells_str = match.group(1)
+    cells = [c.strip().strip('"\'') for c in cells_str.split(",")]
+    grid_html = (
+        '<div style="display: grid; grid-template-columns: repeat(3, 60px); gap:'
+        ' 6px; margin: 16px 0;">'
+    )
+    for cell in cells:
+      display_char = cell if cell else "&nbsp;"
+      color = (
+          "#2563eb"
+          if cell == "X"
+          else ("#dc2626" if cell == "O" else "#6b7280")
+      )
+      grid_html += f"""
+        <div style="width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; 
+                    font-size: 1.5rem; font-weight: bold; color: {color}; border: 2px solid {color}; 
+                    border-radius: 8px; background: rgba(0,0,0,0.02);">
+            {display_char}
+        </div>
+      """
+    grid_html += "</div>"
+    return grid_html
+
+  pattern = r"\{#each\s+\[(.*?)\]\s+as\s+cell,\s*i\}(.*?)\{/each\}"
+  return re.sub(pattern, replacer, text, flags=re.DOTALL)
 
 
 def scrape_single_chat(url: str, apply_filter: bool) -> list:
@@ -205,15 +246,16 @@ def scrape_single_chat(url: str, apply_filter: bool) -> list:
               text_content = clean_assistant_text(text_content)
 
             if text_content.strip():
+              parsed_text = parse_custom_grid_tags(text_content)
               formatted_html = markdown.markdown(
-                  text_content, extensions=["fenced_code", "tables"]
+                  parsed_text, extensions=["fenced_code", "tables"]
               )
               msg_id = f"{role_label}: {text_content[:60]}..."
               messages.append({
                   "id": msg_id,
                   "role": role_label,
                   "text": text_content,
-                  "html": formatted_html
+                  "html": formatted_html,
               })
   except Exception as parse_err:
     raise Exception(f"Error parsing conversation JSON: {parse_err}")
@@ -241,23 +283,22 @@ def add_docx_page_number(run):
   r.append(fldChar3)
 
 
-def get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids):
+def get_filtered_sections(
+    chat_sections, message_filter_role, selection_mode, allowed_ids
+):
   if not chat_sections:
     return []
-  
+
   filtered_sections = []
   for sec_title, messages in chat_sections:
     new_messages = []
     for msg in messages:
       role = msg["role"]
-      
-      # Role filtering
       if message_filter_role == "User" and role != "User":
         continue
       if message_filter_role == "Assistant" and role != "ChatGPT":
         continue
 
-      # Custom multiselect filtering
       if selection_mode == "Pick Specific Messages (Custom)":
         if msg.get("id") not in allowed_ids:
           continue
@@ -279,7 +320,9 @@ def build_pdf_document(
     include_page_nos: bool,
     footer_wm: str,
 ) -> bytes:
-  active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids)
+  active_sections = get_filtered_sections(
+      chat_sections, message_filter_role, selection_mode, allowed_ids
+  )
   with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
     temp_path = tmp.name
 
@@ -413,10 +456,14 @@ def build_html_document(
     shadow_enabled: bool,
     include_toc: bool,
     watermark: str,
+    watermark_alpha: float,
     footer_wm: str,
     include_page_nos: bool,
+    custom_css: str,
 ) -> str:
-  active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids)
+  active_sections = get_filtered_sections(
+      chat_sections, message_filter_role, selection_mode, allowed_ids
+  )
 
   if theme == "Black (OLED)":
     bg_color, text_color = "#000000", "#f3f4f6"
@@ -513,8 +560,8 @@ def build_html_document(
       f"""
     <div style="position: fixed; top: 50%; left: 50%; transform:"""
       " translate(-50%, -50%) rotate(-30deg); font-size: 5rem; font-weight:"
-      f" bold; color: {text_color}; opacity: 0.04; pointer-events: none;"
-      f' z-index: 9999; white-space: nowrap;">'
+      f" bold; color: {text_color}; opacity: {watermark_alpha};"
+      ' pointer-events: none; z-index: 9999; white-space: nowrap;">'
       f" {watermark}"
       " </div>"
   ) if watermark else ""
@@ -645,6 +692,8 @@ def build_html_document(
             th, td {{ border: 1px solid {border_color}; padding: 10px 14px; text-align: left; word-wrap: break-word; }}
             th {{ background-color: {code_bg} !important; font-weight: bold; }}
             img {{ max-width: 100%; height: auto; border-radius: 6px; }}
+            /* Custom User CSS Injection */
+            {custom_css}
         </style>
     </head>
     <body>
@@ -661,8 +710,16 @@ def build_html_document(
   return full_html
 
 
-def convert_chats_to_markdown(chat_sections: list, custom_title: str, message_filter_role: str, selection_mode: str, allowed_ids: list) -> str:
-  active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids)
+def convert_chats_to_markdown(
+    chat_sections: list,
+    custom_title: str,
+    message_filter_role: str,
+    selection_mode: str,
+    allowed_ids: list,
+) -> str:
+  active_sections = get_filtered_sections(
+      chat_sections, message_filter_role, selection_mode, allowed_ids
+  )
   md_content = f"# {custom_title}\n\n"
   for sec_title, messages in active_sections:
     if sec_title:
@@ -683,7 +740,9 @@ def convert_chats_to_docx(
     include_page_nos: bool,
     footer_wm: str,
 ) -> bytes:
-  active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids)
+  active_sections = get_filtered_sections(
+      chat_sections, message_filter_role, selection_mode, allowed_ids
+  )
   doc = Document()
 
   section = doc.sections[0]
@@ -856,15 +915,25 @@ with tab_input:
             " check the URLs."
         )
 
-# Gather all individual messages for granular sidebar picking
+# Gather all individual messages for granular sidebar picking and stats
 all_message_ids = []
 id_to_label_map = {}
+total_word_count = 0
 if st.session_state.chat_sections:
   for _, msgs in st.session_state.chat_sections:
     for m in msgs:
       mid = m["id"]
       all_message_ids.append(mid)
       id_to_label_map[mid] = f"[{m['role']}] {m['text'][:55]}..."
+      total_word_count += len(m["text"].split())
+
+  # Sidebar Statistics Badge
+  st.sidebar.markdown("---")
+  st.sidebar.markdown("📊 **Document Stats**")
+  st.sidebar.caption(
+      f"• Total Words: **{total_word_count:,}**\n• Est. Reading Time:"
+      f" **{max(1, total_word_count // 200)} min**"
+  )
 
 selected_message_ids = all_message_ids
 if message_selection_mode == "Pick Specific Messages (Custom)" and all_message_ids:
@@ -874,7 +943,7 @@ if message_selection_mode == "Pick Specific Messages (Custom)" and all_message_i
       "Check messages to include:",
       options=all_message_ids,
       default=all_message_ids,
-      format_func=lambda x: id_to_label_map.get(x, x)
+      format_func=lambda x: id_to_label_map.get(x, x),
   )
 
 with tab_preview:
@@ -909,8 +978,10 @@ with tab_preview:
         enable_box_shadow,
         generate_toc,
         watermark_text,
+        watermark_opacity / 100.0,
         footer_watermark_text,
         show_page_numbers,
+        custom_css_injection,
     )
     with st.container(border=True):
       st.components.v1.html(live_preview_html, height=700, scrolling=True)
@@ -966,7 +1037,11 @@ with tab_download:
         elif "Markdown" in export_format:
           with st.spinner("Generating Markdown file..."):
             md_text = convert_chats_to_markdown(
-                st.session_state.chat_sections, custom_title, message_filter_role, message_selection_mode, selected_message_ids
+                st.session_state.chat_sections,
+                custom_title,
+                message_filter_role,
+                message_selection_mode,
+                selected_message_ids,
             )
             file_data = md_text.encode("utf-8")
             mime_type = "text/markdown"
@@ -998,8 +1073,10 @@ with tab_download:
                 enable_box_shadow,
                 generate_toc,
                 watermark_text,
+                watermark_opacity / 100.0,
                 footer_watermark_text,
                 show_page_numbers,
+                custom_css_injection,
             )
             file_data = live_preview_html.encode("utf-8")
             mime_type = "text/html"
