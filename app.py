@@ -1135,7 +1135,8 @@ with tab_download:
             final_name = f"{base_filename}.md"
         else:  # HTML
           with st.spinner("Generating HTML file..."):
-            live_preview_html = build_html_document(
+            # FIXED: Now calls build_html_document with ALL custom settings/styles so it matches the preview perfectly!
+            file_data = build_html_document(
                 st.session_state.chat_sections,
                 theme,
                 layout_view_style,
@@ -1164,8 +1165,7 @@ with tab_download:
                 footer_watermark_text,
                 show_page_numbers,
                 custom_css_injection,
-            )
-            file_data = live_preview_html.encode("utf-8")
+            ).encode("utf-8")
             mime_type = "text/html"
             final_name = f"{base_filename}.html"
 
