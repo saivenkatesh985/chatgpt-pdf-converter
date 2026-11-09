@@ -1,11 +1,23 @@
 import os
 import tempfile
 import datetime
+import subprocess
+import sys
 import streamlit as st
 from playwright.sync_api import sync_playwright
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+# --- Automatically install playwright browsers on cloud deployment ---
+@st.cache_resource
+def install_playwright():
+    try:
+        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+    except Exception as e:
+        print(f"Playwright browser install notice: {e}")
+
+install_playwright()
 
 # Page config
 st.set_page_config(page_title="ChatGPT Document Customizer", page_icon="📄", layout="wide")
@@ -339,7 +351,6 @@ def convert_html_to_pdf_bytes(full_html: str, margin_val: int, page_format: str)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             temp_path = tmp.name
 
-        # Apply exact user-defined millimeter margin to PDF print layout
         m_str = f"{margin_val}mm"
         pdf_margins = {"top": m_str, "bottom": m_str, "left": m_str, "right": m_str}
 
