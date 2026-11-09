@@ -52,7 +52,10 @@ st.markdown(
 st.sidebar.header("🎨 Layout Studio")
 
 with st.sidebar.expander("📌 Document & Branding", expanded=True):
-  theme = st.selectbox("Color Theme", ["White", "Dark", "Note", "Study"])
+  theme = st.selectbox(
+      "Color Theme",
+      ["White", "Black (OLED)", "Notes", "Study", "Conversation"],
+  )
   layout_view_style = st.selectbox(
       "Layout Presentation",
       ["Professional Document / Essay", "Modern Chat Bubbles"],
@@ -130,7 +133,6 @@ if "chat_sections" not in st.session_state:
 
 # --- HELPER FUNCTIONS ---
 def clean_assistant_text(text: str) -> str:
-  # Strip out backend citation artifacts like filecite...
   text = re.sub(r".*?", "", text)
   pattern = re.compile(
       r"\n+(?:If you want, I can:|Would you like me to:|Let me know if you).*$",
@@ -369,11 +371,11 @@ def build_html_document(
     footer_wm: str,
     include_page_nos: bool,
 ) -> str:
-  if theme == "Dark":
-    bg_color, text_color = "#121212", "#e0e0e0"
-    user_bg, user_text = "#1a332c", "#a3e4d7"
-    border_color, code_bg, code_color = "#333333", "#1e1e1e", "#dcdcaa"
-  elif theme == "Note":
+  if theme == "Black (OLED)":
+    bg_color, text_color = "#000000", "#f3f4f6"
+    user_bg, user_text = "#18181b", "#a1a1aa"
+    border_color, code_bg, code_color = "#27272a", "#09090b", "#e4e4e7"
+  elif theme == "Notes":
     bg_color, text_color = "#fbf0d9", "#2c221e"
     user_bg, user_text = "#e6f2ed", "#1b4d3e"
     border_color, code_bg, code_color = "#e6d7bc", "#f4e7ce", "#2c221e"
@@ -381,7 +383,11 @@ def build_html_document(
     bg_color, text_color = "#f0f4f8", "#102a43"
     user_bg, user_text = "#d9e2ec", "#243b53"
     border_color, code_bg, code_color = "#bcccdc", "#e2e8f0", "#102a43"
-  else:
+  elif theme == "Conversation":
+    bg_color, text_color = "#f7f7f8", "#202123"
+    user_bg, user_text = "#eef8f6", "#0f5132"
+    border_color, code_bg, code_color = "#e5e5e6", "#ffffff", "#202123"
+  else:  # White
     bg_color, text_color = "#ffffff", "#1a1a1a"
     user_bg, user_text = "#edf7f0", "#114f2e"
     border_color, code_bg, code_color = "#e1e4e8", "#f6f8fa", "#24292e"
@@ -422,7 +428,6 @@ def build_html_document(
       else ""
   )
 
-  # Safely construct timestamp HTML outside to avoid nested f-string syntax error
   timestamp_html = (
       f'<div style="font-size: 0.55em; font-weight: normal; opacity: 0.7;'
       f' margin-top: 4px;">Exported on: {timestamp_str}</div>'
