@@ -8,9 +8,11 @@ import streamlit as st
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 # Page config
-st.set_page_config(page_title="ChatGPT Document Customizer", page_icon="📄", layout="wide")
+st.set_page_config(page_title="ChatGPT Document Studio", page_icon="📄", layout="wide")
 
 # Custom UI polish
 st.markdown("""
@@ -24,83 +26,65 @@ st.markdown("""
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
+        .block-container {
+            padding-top: 2rem;
+        }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📄 ChatGPT Link to Multi-Format Document & Preview")
-st.markdown("Transform single or multiple public ChatGPT conversations into professionally styled Word, Markdown, or HTML documents with advanced customization options!")
+st.title("📄 ChatGPT Link to Multi-Format Document Studio")
+st.markdown("Transform single or multiple public ChatGPT conversations into professionally styled Word, Markdown, or HTML documents.")
 
-# --- Sidebar Customization Controls ---
-st.sidebar.header("🎨 Customization & Layout Studio")
+# --- SIDEBAR: ORGANIZED LAYOUT STUDIO ---
+st.sidebar.header("🎨 Layout Studio")
 
-theme = st.sidebar.selectbox("Color Theme", ["White", "Dark", "Note", "Study"])
-font_style = st.sidebar.selectbox("Font Style", ["Sans-serif", "Serif", "Monospace"])
+with st.sidebar.expander("📌 Document & Branding", expanded=True):
+    theme = st.selectbox("Color Theme", ["White", "Dark", "Note", "Study"])
+    font_style = st.selectbox("Font Style", ["Sans-serif", "Serif", "Monospace"])
+    custom_title = st.text_input("Document Title Text", value="ChatGPT Conversation Export")
+    header_alignment = st.selectbox("Header Alignment", ["Left", "Center", "Right"])
+    footer_text = st.text_input("Custom Footer Text", value="")
+    watermark_text = st.text_input("Page Watermark Text (Optional)", value="")
 
-font_size = st.sidebar.text_input("Font Size (e.g., 14px, 16px, 1.1rem)", value="16px")
-margin_mm = st.sidebar.number_input("Page Margins (mm)", min_value=0, max_value=50, value=15, step=1)
-max_content_width = st.sidebar.slider("Max Content Width (px)", min_value=600, max_value=1400, value=900, step=50)
+with st.sidebar.expander("📐 Spacing & Geometry", expanded=False):
+    font_size = st.text_input("Font Size", value="16px")
+    margin_mm = st.number_input("Page Margins (mm)", min_value=0, max_value=50, value=15, step=1)
+    max_content_width = st.slider("Max Content Width (px)", min_value=600, max_value=1400, value=900, step=50)
+    line_height = st.slider("Line Spacing", min_value=1.2, max_value=2.0, value=1.6, step=0.1)
+    paragraph_spacing = st.slider("Paragraph Spacing (px)", min_value=4, max_value=24, value=12, step=2)
 
-st.sidebar.markdown("---")
-st.sidebar.header("⚙️ Advanced Styling & Structure")
+with st.sidebar.expander("✨ Styling & Accents", expanded=False):
+    accent_color_map = {
+        "Modern Green (#10a37f)": "#10a37f",
+        "Executive Blue (#2563eb)": "#2563eb",
+        "Royal Purple (#7c3aed)": "#7c3aed",
+        "Sunset Orange (#ea580c)": "#ea580c"
+    }
+    chosen_accent_label = st.selectbox("Accent & Border Color", list(accent_color_map.keys()))
+    chosen_accent = accent_color_map[chosen_accent_label]
+    block_radius = st.selectbox("User Message Box Corners", ["Sharp (0px)", "Rounded (6px)", "Pill (12px)"])
+    enable_box_shadow = st.checkbox("Add Subtle Shadow to User Boxes", value=True)
 
-export_format = st.sidebar.selectbox("Export Format Type", ["Word Document (.docx)", "Markdown Document (.md)", "HTML Webpage (.html)"])
-show_user_messages = st.sidebar.checkbox("Include User Messages", value=True)
-remove_ai_closings = st.sidebar.checkbox("Remove AI Closing Offers ('If you want, I can...')", value=True)
-show_header_title = st.sidebar.checkbox("Include Document Title Header", value=True)
-custom_title = st.sidebar.text_input("Document Title Text", value="ChatGPT Conversation Export")
-header_alignment = st.sidebar.selectbox("Header Alignment", ["Left", "Center", "Right"])
-show_dividers = st.sidebar.checkbox("Show Turn Dividers", value=False)
-show_timestamp = st.sidebar.checkbox("Include Export Timestamp", value=True)
-footer_text = st.sidebar.text_input("Custom Footer Text", value="")
+with st.sidebar.expander("⚙️ Structure & Filters", expanded=False):
+    export_format = st.selectbox("Export Format Type", ["Word Document (.docx)", "Markdown Document (.md)", "HTML Webpage (.html)"])
+    show_user_messages = st.checkbox("Include User Messages", value=True)
+    enable_ai_filter = st.checkbox("Enable Custom AI Closing Filter", value=True)
+    generate_toc = st.checkbox("Include Table of Contents", value=True)
+    show_page_numbers = st.checkbox("Include Page Numbers (CSS / Word)", value=True)
+    show_header_title = st.checkbox("Include Title Header", value=True)
+    show_dividers = st.checkbox("Show Turn Dividers", value=False)
+    show_timestamp = st.checkbox("Include Export Timestamp", value=True)
 
-accent_color_map = {
-    "Modern Green (#10a37f)": "#10a37f",
-    "Executive Blue (#2563eb)": "#2563eb",
-    "Royal Purple (#7c3aed)": "#7c3aed",
-    "Sunset Orange (#ea580c)": "#ea580c"
-}
-chosen_accent_label = st.sidebar.selectbox("Accent & Border Color", list(accent_color_map.keys()))
-chosen_accent = accent_color_map[chosen_accent_label]
+# --- SESSION STATE ---
+if "chat_sections" not in st.session_state:
+    st.session_state.chat_sections = None
 
-line_height = st.sidebar.slider("Line Spacing", min_value=1.2, max_value=2.0, value=1.6, step=0.1)
-paragraph_spacing = st.sidebar.slider("Paragraph Spacing (px)", min_value=4, max_value=24, value=12, step=2)
-block_radius = st.sidebar.selectbox("User Message Box Corners", ["Sharp (0px)", "Rounded (6px)", "Pill (12px)"])
-enable_box_shadow = st.sidebar.checkbox("Add Subtle Shadow to User Boxes", value=True)
-
-# --- Main Form Mode Selector & Inputs ---
-input_mode = st.radio("Select Input Mode:", ["Single Link", "Bulk Links (Multiple)"], horizontal=True)
-
-bulk_order = "Chronological (Top-to-Bottom)"
-link_titles = {}
-urls = []
-
-if input_mode == "Single Link":
-    share_url_single = st.text_input("ChatGPT Share Link", placeholder="https://chatgpt.com/share/...")
-    if share_url_single.strip():
-        urls = [share_url_single.strip()]
-else:
-    share_urls_textarea = st.text_area("ChatGPT Share Links (Paste one link per line)", placeholder="https://chatgpt.com/share/...\nhttps://chatgpt.com/share/...", height=100)
-    bulk_order = st.radio("Bulk Chat Sequence Order:", ["Chronological (Top-to-Bottom)", "Reverse Chronological (Bottom-to-Top)"], horizontal=True)
-    
-    raw_urls = [u.strip() for u in share_urls_textarea.split("\n") if u.strip()]
-    if raw_urls:
-        if bulk_order.startswith("Reverse"):
-            raw_urls = raw_urls[::-1]
-            
-        st.markdown("##### ✏️ Custom Section Titles per Link")
-        for idx, u in enumerate(raw_urls):
-            link_titles[u] = st.text_input(f"Title for Link #{idx+1} ({u[:30]}...)", value=f"Conversation Section #{idx+1}")
-    urls = raw_urls
-
-output_filename = st.text_input("Output Filename", value="chatgpt_export")
-
+# --- HELPER FUNCTIONS ---
 def clean_assistant_text(text: str) -> str:
-    """Removes trailing AI closing offers and follow-up bullets."""
     pattern = re.compile(r'\n+(?:If you want, I can:|Would you like me to:|Let me know if you).*$', re.DOTALL | re.IGNORECASE)
     return pattern.sub('', text).strip()
 
-def scrape_single_chat(url: str, strip_closings: bool) -> list:
-    """Fetches chat content via ChatGPT's backend share API and parses Markdown into formatted HTML."""
+def scrape_single_chat(url: str, apply_filter: bool) -> list:
     clean_url = url.split("?")[0].strip()
     if not clean_url:
         return []
@@ -143,8 +127,7 @@ def scrape_single_chat(url: str, strip_closings: bool) -> list:
                     text_content = "".join([str(p) for p in content_parts if isinstance(p, str)])
                     if text_content.strip():
                         role_label = "User" if author == "user" else "ChatGPT"
-                        
-                        if role_label == "ChatGPT" and strip_closings:
+                        if role_label == "ChatGPT" and apply_filter:
                             text_content = clean_assistant_text(text_content)
                             
                         if text_content.strip():
@@ -158,27 +141,47 @@ def scrape_single_chat(url: str, strip_closings: bool) -> list:
 
     if not messages:
         raise Exception("No messages found in this share link.")
-
     return messages
 
-def build_html_document(chat_sections: list, theme: str, font_style: str, font_size: str, line_height: float, paragraph_spacing: int, show_user_messages: bool, show_header_title: bool, custom_title: str, header_alignment: str, show_dividers: bool, show_timestamp: bool, footer_text: str, chosen_accent: str, block_radius: str, margin_val: int, max_width: int, shadow_enabled: bool) -> str:
-    """Builds a combined HTML document using custom numeric margin padding and layout settings."""
+def add_docx_page_number(run):
+    """Utility to inject Word XML field codes for dynamic page numbering (Page X of Y)."""
+    fldChar1 = OxmlElement('w:fldChar')
+    fldChar1.set(qn('w:fldCharType'), 'begin')
+    instrText = OxmlElement('w:instrText')
+    instrText.set(qn('xml:space'), 'preserve')
+    instrText.text = "PAGE"
+    fldChar2 = OxmlElement('w:fldChar')
+    fldChar2.set(qn('w:fldCharType'), 'separate')
+    fldChar3 = OxmlElement('w:fldChar')
+    fldChar3.set(qn('w:fldCharType'), 'end')
+    
+    r = run._r
+    r.append(fldChar1)
+    r.append(instrText)
+    r.append(fldChar2)
+    r.append(fldChar3)
+
+def build_html_document(chat_sections: list, theme: str, font_style: str, font_size: str, line_height: float, paragraph_spacing: int, show_user_messages: bool, show_header_title: bool, custom_title: str, header_alignment: str, show_dividers: bool, show_timestamp: bool, footer_text: str, chosen_accent: str, block_radius: str, margin_val: int, max_width: int, shadow_enabled: bool, include_toc: bool, watermark: str, include_page_nos: bool) -> str:
     if theme == "Dark":
         bg_color, text_color = "#121212", "#e0e0e0"
         user_bg, user_text = "#1a332c", "#a3e4d7"
-        border_color, code_bg, code_color = "#333333", "#0f0f0f", "#f8f8f8"
+        border_color, code_bg, code_color = "#333333", "#1e1e1e", "#dcdcaa"
+        highlight_theme = "atom-one-dark"
     elif theme == "Note":
         bg_color, text_color = "#fbf0d9", "#2c221e"
         user_bg, user_text = "#e6f2ed", "#1b4d3e"
         border_color, code_bg, code_color = "#e6d7bc", "#f4e7ce", "#2c221e"
+        highlight_theme = "intellij-light"
     elif theme == "Study":
         bg_color, text_color = "#f0f4f8", "#102a43"
         user_bg, user_text = "#d9e2ec", "#243b53"
         border_color, code_bg, code_color = "#bcccdc", "#e2e8f0", "#102a43"
+        highlight_theme = "github"
     else:
         bg_color, text_color = "#ffffff", "#1a1a1a"
         user_bg, user_text = "#edf7f0", "#114f2e"
-        border_color, code_bg, code_color = "#e1e4e8", "#f1f1f1", "#222222"
+        border_color, code_bg, code_color = "#e1e4e8", "#f6f8fa", "#24292e"
+        highlight_theme = "github"
 
     font_map = {
         "Sans-serif": '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
@@ -187,15 +190,10 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
     }
     chosen_font = font_map.get(font_style, font_map["Sans-serif"])
 
-    radius_map = {
-        "Sharp (0px)": "0px",
-        "Rounded (6px)": "6px",
-        "Pill (12px)": "12px"
-    }
+    radius_map = {"Sharp (0px)": "0px", "Rounded (6px)": "6px", "Pill (12px)": "12px"}
     chosen_radius = radius_map.get(block_radius, "6px")
     chosen_padding = f"{margin_val}mm"
     box_shadow_css = "box-shadow: 0 4px 12px rgba(0,0,0,0.06);" if shadow_enabled else ""
-
     timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M") if show_timestamp else ""
 
     header_html = f"""
@@ -205,13 +203,42 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
     </div>
     """ if show_header_title else ""
 
+    toc_html = ""
+    if include_toc and len(chat_sections) > 1:
+        toc_items = "".join([f'<li><a href="#section-{idx}" style="color: {chosen_accent}; text-decoration: none;">{sec_title}</a></li>' for idx, (sec_title, _) in enumerate(chat_sections)])
+        toc_html = f"""
+        <div style="background-color: {code_bg}; border: 1px solid {border_color}; padding: 16px 20px; border-radius: 8px; margin-bottom: 30px;">
+            <div style="font-weight: bold; margin-bottom: 8px; font-size: 1.1em;">📑 Table of Contents</div>
+            <ul style="margin: 0; padding-left: 20px;">
+                {toc_items}
+            </ul>
+        </div>
+        """
+
+    watermark_html = f"""
+    <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 5rem; font-weight: bold; color: {text_color}; opacity: 0.04; pointer-events: none; z-index: 9999; white-space: nowrap;">
+        {watermark}
+    </div>
+    """ if watermark else ""
+
+    page_num_css = """
+    @page {
+        @bottom-right {
+            content: "Page " counter(page) " of " counter(pages);
+            font-size: 9pt;
+            color: #888888;
+        }
+    }
+    """ if include_page_nos else ""
+
     divider_html = f"""<hr style="border: none; border-top: 1px solid {border_color}; margin: 24px 0;" />""" if show_dividers else ""
 
     document_body_html = ""
-    for sec_title, messages in chat_sections:
+    for idx, (sec_title, messages) in enumerate(chat_sections):
+        section_id = f"section-{idx}"
         if len(chat_sections) > 1 or sec_title:
             document_body_html += f"""
-            <div style="font-size: 1.2em; font-weight: bold; color: {chosen_accent}; margin-top: 40px; margin-bottom: 20px; border-bottom: 1px dashed {border_color}; padding-bottom: 8px;">
+            <div id="{section_id}" style="font-size: 1.2em; font-weight: bold; color: {chosen_accent}; margin-top: 40px; margin-bottom: 20px; border-bottom: 1px dashed {border_color}; padding-bottom: 8px;">
                 {sec_title}
             </div>
             """
@@ -245,8 +272,12 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
     <html>
     <head>
         <meta charset="utf-8">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/{highlight_theme}.min.css">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
         <style>
             * {{ box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
+            {page_num_css}
             html, body {{
                 background-color: {bg_color} !important;
                 color: {text_color} !important;
@@ -255,6 +286,7 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
                 line-height: {line_height};
                 margin: 0;
                 padding: 0;
+                scroll-behavior: smooth;
             }}
             .page-wrapper {{
                 max-width: {max_width}px;
@@ -271,8 +303,8 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
             p {{ margin-top: 0; margin-bottom: {paragraph_spacing}px; }}
             ul, ol {{ padding-left: 20px; margin-top: 5px; margin-bottom: 15px; }}
             li {{ margin-bottom: 6px; }}
-            pre {{ background-color: {code_bg} !important; color: {code_color} !important; padding: 12px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; font-family: Consolas, Monaco, monospace; }}
-            code {{ font-family: Consolas, Monaco, monospace; background-color: {code_bg} !important; color: {code_color} !important; padding: 2px 4px; border-radius: 4px; }}
+            pre {{ background-color: {code_bg} !important; padding: 14px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; font-family: Consolas, Monaco, monospace; border: 1px solid {border_color}; }}
+            code {{ font-family: Consolas, Monaco, monospace; padding: 2px 4px; border-radius: 4px; }}
             table {{ border-collapse: collapse; width: 100%; margin-top: 15px; margin-bottom: 20px; table-layout: fixed; }}
             th, td {{ border: 1px solid {border_color}; padding: 10px 14px; text-align: left; word-wrap: break-word; }}
             th {{ background-color: {code_bg} !important; font-weight: bold; }}
@@ -280,8 +312,10 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
         </style>
     </head>
     <body>
+        {watermark_html}
         <div class="page-wrapper">
             {header_html}
+            {toc_html}
             {document_body_html}
             {footer_html}
         </div>
@@ -299,8 +333,19 @@ def convert_chats_to_markdown(chat_sections: list, custom_title: str) -> str:
             md_content += f"### **{msg['role']}**\n\n{msg['html']}\n\n---\n\n"
     return md_content
 
-def convert_chats_to_docx(chat_sections: list, custom_title: str, show_user_messages: bool, show_timestamp: bool, footer_text: str) -> bytes:
+def convert_chats_to_docx(chat_sections: list, custom_title: str, show_user_messages: bool, show_timestamp: bool, footer_text: str, include_page_nos: bool) -> bytes:
     doc = Document()
+
+    if include_page_nos:
+        section = doc.sections[0]
+        footer = section.footer
+        p = footer.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r_page = p.add_run("Page ")
+        r_page.font.size = Pt(9)
+        r_page.font.color.rgb = RGBColor(120, 120, 120)
+        add_docx_page_number(p.add_run())
+
     if custom_title:
         title_p = doc.add_paragraph()
         title_run = title_p.add_run(custom_title)
@@ -358,93 +403,120 @@ def convert_chats_to_docx(chat_sections: list, custom_title: str, show_user_mess
         os.remove(temp_path)
     return docx_bytes
 
-# --- Session State Management ---
-if "chat_sections" not in st.session_state:
-    st.session_state.chat_sections = None
+# --- MAIN INTERFACE TABS ---
+tab_input, tab_preview, tab_download = st.tabs(["🔗 1. Input & Fetch", "👁️ 2. Live Preview", "📥 3. Download Exports"])
 
-# Step 1: Action Button to Fetch Chats (Single or Bulk)
-if st.button("🔍 1. Fetch Chat Content", type="primary"):
-    if not urls:
-        st.error("Please enter at least one valid ChatGPT share link.")
+with tab_input:
+    st.subheader("Enter ChatGPT Share Links")
+    input_mode = st.radio("Select Input Mode:", ["Single Link", "Bulk Links (Multiple)"], horizontal=True)
+
+    link_titles = {}
+    urls = []
+
+    if input_mode == "Single Link":
+        share_url_single = st.text_input("ChatGPT Share Link", placeholder="https://chatgpt.com/share/...")
+        if share_url_single.strip():
+            urls = [share_url_single.strip()]
     else:
-        st.session_state.chat_sections = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        share_urls_textarea = st.text_area("ChatGPT Share Links (Paste one link per line)", placeholder="https://chatgpt.com/share/...\nhttps://chatgpt.com/share/...", height=100)
+        bulk_order = st.radio("Bulk Chat Sequence Order:", ["Chronological (Top-to-Bottom)", "Reverse Chronological (Bottom-to-Top)"], horizontal=True)
         
-        failed_links = []
-        for i, url in enumerate(urls):
-            status_text.text(f"Fetching link {i+1} of {len(urls)}...")
-            try:
-                msgs = scrape_single_chat(url, remove_ai_closings)
-                if msgs:
-                    sec_title = link_titles.get(url, f"Conversation Section #{i+1}") if input_mode == "Bulk Links (Multiple)" else (custom_title if show_header_title else "Conversation")
-                    st.session_state.chat_sections.append((sec_title, msgs))
-            except Exception as e:
-                failed_links.append(f"{url} (Error: {e})")
-            progress_bar.progress((i + 1) / len(urls))
-            
-        status_text.empty()
-        progress_bar.empty()
-        
-        if st.session_state.chat_sections:
-            st.success(f"Successfully fetched {len(st.session_state.chat_sections)} conversation(s)!")
-            if failed_links:
-                st.warning(f"Failed to load {len(failed_links)} link(s):\n" + "\n".join(failed_links))
+        raw_urls = [u.strip() for u in share_urls_textarea.split("\n") if u.strip()]
+        if raw_urls:
+            if bulk_order.startswith("Reverse"):
+                raw_urls = raw_urls[::-1]
+                
+            st.markdown("##### ✏️ Custom Section Titles per Link")
+            for idx, u in enumerate(raw_urls):
+                link_titles[u] = st.text_input(f"Title for Link #{idx+1} ({u[:30]}...)", value=f"Conversation Section #{idx+1}")
+        urls = raw_urls
+
+    if st.button("🔍 Fetch Chat Content Now", type="primary"):
+        if not urls:
+            st.error("Please enter at least one valid ChatGPT share link.")
         else:
-            st.error("Could not parse any conversations from the provided links. Please check the URLs.")
-
-# Step 2: Stacked Preview and Download Sections
-if st.session_state.chat_sections:
-    st.markdown("---")
-    
-    live_preview_html = build_html_document(
-        st.session_state.chat_sections, theme, font_style, font_size, line_height, paragraph_spacing,
-        show_user_messages, show_header_title, custom_title, header_alignment, 
-        show_dividers, show_timestamp, footer_text, chosen_accent, block_radius, margin_mm, max_content_width, enable_box_shadow
-    )
-    
-    # --- LIVE PREVIEW CONTAINER ---
-    st.subheader("👁️ 2. Document Preview")
-    st.caption("Instantly reflects your chosen theme, custom link titles, and layout configurations.")
-    
-    with st.container(border=True):
-        st.components.v1.html(live_preview_html, height=650, scrolling=True)
-
-    st.markdown("---")
-    
-    # --- DOWNLOAD SECTION ---
-    st.subheader("📥 3. Download Document File")
-    st.caption("Save your conversation export in your preferred format.")
-    
-    if st.button("🚀 Generate & Download File Now", type="secondary"):
-        try:
-            base_filename = output_filename.strip()
-            if not base_filename:
-                base_filename = "chatgpt_export"
+            st.session_state.chat_sections = []
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             
-            if "Word" in export_format:
-                with st.spinner("Compiling Word Document (.docx)..."):
-                    file_data = convert_chats_to_docx(st.session_state.chat_sections, custom_title, show_user_messages, show_timestamp, footer_text)
-                    mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    final_name = f"{base_filename}.docx"
-            elif "Markdown" in export_format:
-                with st.spinner("Generating Markdown file..."):
-                    md_text = convert_chats_to_markdown(st.session_state.chat_sections, custom_title)
-                    file_data = md_text.encode("utf-8")
-                    mime_type = "text/markdown"
-                    final_name = f"{base_filename}.md"
-            else: # HTML
-                with st.spinner("Generating HTML file..."):
-                    file_data = live_preview_html.encode("utf-8")
-                    mime_type = "text/html"
-                    final_name = f"{base_filename}.html"
+            failed_links = []
+            for i, url in enumerate(urls):
+                status_text.text(f"Fetching link {i+1} of {len(urls)}...")
+                try:
+                    msgs = scrape_single_chat(url, enable_ai_filter)
+                    if msgs:
+                        sec_title = link_titles.get(url, f"Conversation Section #{i+1}") if input_mode == "Bulk Links (Multiple)" else (custom_title if show_header_title else "Conversation")
+                        st.session_state.chat_sections.append((sec_title, msgs))
+                except Exception as e:
+                    failed_links.append(f"{url} (Error: {e})")
+                progress_bar.progress((i + 1) / len(urls))
+                
+            status_text.empty()
+            progress_bar.empty()
             
-            st.success("Document built successfully! Click below to save:")
-            st.download_button(
-                label=f"💾 Click Here to Save {final_name}",
-                data=file_data,
-                file_name=final_name,
-                mime=mime_type
-            )
-        except Exception as e:
-            st.error(f"An error occurred during file creation: {e}")
+            if st.session_state.chat_sections:
+                st.success(f"Successfully fetched {len(st.session_state.chat_sections)} conversation(s)! Head over to the **Live Preview** tab.")
+                if failed_links:
+                    st.warning(f"Failed to load {len(failed_links)} link(s):\n" + "\n".join(failed_links))
+            else:
+                st.error("Could not parse any conversations from the provided links. Please check the URLs.")
+
+with tab_preview:
+    st.subheader("Live Document Preview")
+    if st.session_state.chat_sections:
+        st.caption("Instantly reflects your chosen theme, custom titles, and layout configurations from the sidebar.")
+        live_preview_html = build_html_document(
+            st.session_state.chat_sections, theme, font_style, font_size, line_height, paragraph_spacing,
+            show_user_messages, show_header_title, custom_title, header_alignment, 
+            show_dividers, show_timestamp, footer_text, chosen_accent, block_radius, margin_mm, max_content_width, enable_box_shadow, generate_toc, watermark_text, show_page_numbers
+        )
+        with st.container(border=True):
+            st.components.v1.html(live_preview_html, height=700, scrolling=True)
+    else:
+        st.info("Please enter your share links and click **Fetch Chat Content Now** in the first tab to view the preview.")
+
+with tab_download:
+    st.subheader("Download Document File")
+    if st.session_state.chat_sections:
+        output_filename = st.text_input("Output Filename", value="chatgpt_export")
+        
+        if st.button("🚀 Generate & Download File Now", type="secondary"):
+            try:
+                base_filename = output_filename.strip()
+                if not base_filename:
+                    base_filename = "chat_export"
+                
+                live_preview_html = build_html_document(
+                    st.session_state.chat_sections, theme, font_style, font_size, line_height, paragraph_spacing,
+                    show_user_messages, show_header_title, custom_title, header_alignment, 
+                    show_dividers, show_timestamp, footer_text, chosen_accent, block_radius, margin_mm, max_content_width, enable_box_shadow, generate_toc, watermark_text, show_page_numbers
+                )
+
+                if "Word" in export_format:
+                    with st.spinner("Compiling Word Document (.docx)..."):
+                        file_data = convert_chats_to_docx(st.session_state.chat_sections, custom_title, show_user_messages, show_timestamp, footer_text, show_page_numbers)
+                        mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        final_name = f"{base_filename}.docx"
+                elif "Markdown" in export_format:
+                    with st.spinner("Generating Markdown file..."):
+                        md_text = convert_chats_to_markdown(st.session_state.chat_sections, custom_title)
+                        file_data = md_text.encode("utf-8")
+                        mime_type = "text/markdown"
+                        final_name = f"{base_filename}.md"
+                else: # HTML
+                    with st.spinner("Generating HTML file..."):
+                        file_data = live_preview_html.encode("utf-8")
+                        mime_type = "text/html"
+                        final_name = f"{base_filename}.html"
+                
+                st.success("Document built successfully! Click below to save:")
+                st.download_button(
+                    label=f"💾 Click Here to Save {final_name}",
+                    data=file_data,
+                    file_name=final_name,
+                    mime=mime_type
+                )
+            except Exception as e:
+                st.error(f"An error occurred during file creation: {e}")
+    else:
+        st.info("Fetch your chats first before downloading.")
