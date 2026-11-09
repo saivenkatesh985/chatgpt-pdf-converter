@@ -117,13 +117,11 @@ def scrape_single_chat(url: str) -> list:
         browser = p.chromium.launch(
             headless=True,
             args=[
-                "--disable-blink-features=AutomationControlled",
+                "--disable-gpu",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
-                "--disable-infobars",
-                "--window-size=1280,800",
                 "--disable-dev-shm-usage",
-                "--disable-gpu"
+                "--disable-blink-features=AutomationControlled"
             ]
         )
         
@@ -344,7 +342,15 @@ def build_html_document(chat_sections: list, theme: str, font_style: str, font_s
 
 def convert_html_to_pdf_bytes(full_html: str, margin_val: int, page_format: str) -> bytes:
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-gpu",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage"
+            ]
+        )
         page = browser.new_page()
         page.set_content(full_html, wait_until="load")
         
