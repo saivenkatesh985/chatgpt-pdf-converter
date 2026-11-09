@@ -185,7 +185,6 @@ def scrape_single_chat(url: str, apply_filter: bool) -> list:
           text_content = "".join(
               [str(p) for p in content_parts if isinstance(p, str)]
           )
-          # Clean citations from user messages as well
           text_content = re.sub(r".*?", "", text_content)
 
           if text_content.strip():
@@ -423,16 +422,24 @@ def build_html_document(
       else ""
   )
 
+  # Safely construct timestamp HTML outside to avoid nested f-string syntax error
+  timestamp_html = (
+      f'<div style="font-size: 0.55em; font-weight: normal; opacity: 0.7;'
+      f' margin-top: 4px;">Exported on: {timestamp_str}</div>'
+      if show_timestamp
+      else ""
+  )
+
   header_html = (
       f"""
-    <div style="font-size: 1.4em; font-weight: bold; text-align:"""
-      f" {header_alignment.lower()}; border-bottom: 2px solid"
-      f" {chosen_accent}; padding-bottom: 10px; margin-bottom: 24px; color:"
-      f' {text_color} !important;">'
-      f" {custom_title}"
-      f' {f"<div style="font-size: 0.55em; font-weight: normal; opacity: 0.7; margin-top: 4px;">Exported on: {timestamp_str}</div>" if show_timestamp else ""}'
-      " </div>"
-  ) if show_header_title else ""
+    <div style="font-size: 1.4em; font-weight: bold; text-align: {header_alignment.lower()}; border-bottom: 2px solid {chosen_accent}; padding-bottom: 10px; margin-bottom: 24px; color: {text_color} !important;">
+        {custom_title}
+        {timestamp_html}
+    </div>
+    """
+      if show_header_title
+      else ""
+  )
 
   toc_html = ""
   if include_toc and len(chat_sections) > 1:
