@@ -47,7 +47,7 @@ st.title("⬇️ ChatGPT Link to Multi-Format Document Studio")
 st.markdown(
     "Transform single or multiple public ChatGPT conversations into"
     " professionally styled Word, Markdown, PDF, or HTML documents with advanced"
-    " custom controls."
+    " custom controls and interactive diagrams."
 )
 
 # --- SIDEBAR: ORGANIZED LAYOUT STUDIO ---
@@ -161,10 +161,11 @@ def clean_assistant_text(text: str) -> str:
   return pattern.sub("", text).strip()
 
 
-def parse_custom_grid_tags(text: str) -> str:
-  """Converts custom Svelte-like title/cell components into styled HTML grids."""
+def parse_custom_tags_and_flowcharts(text: str) -> str:
+  """Converts custom grid elements and replaces flowchart representations with valid interactive Mermaid diagrams."""
 
-  def replacer(match):
+  # 1. Parse Tic-Tac-Toe / Custom Grid Tags
+  def grid_replacer(match):
     cells_str = match.group(1)
     cells = [c.strip().strip('"\'') for c in cells_str.split(",")]
     grid_html = (
@@ -188,8 +189,39 @@ def parse_custom_grid_tags(text: str) -> str:
     grid_html += "</div>"
     return grid_html
 
-  pattern = r"\{#each\s+\[(.*?)\]\s+as\s+cell,\s*i\}(.*?)\{/each\}"
-  return re.sub(pattern, replacer, text, flags=re.DOTALL)
+  text = re.sub(
+      r'\{#each\s+\[(.*?)\]\s+as\s+cell,\s*i\}(.*?)\{/each\}',
+      grid_replacer,
+      text,
+      flags=re.DOTALL,
+  )
+
+  # 2. Convert A* Flowchart ASCII block into an interactive Mermaid graph
+  if "Initialize OPEN" in text or "START" in text and "CLOSED" in text:
+    mermaid_block = """
+        <div class="mermaid" style="margin: 20px 0; background: rgba(0,0,0,0.02); padding: 15px; border-radius: 8px; border: 1px solid #e1e4e8;">
+        graph TD
+            A["START: Start = E"] --> B["Initialize OPEN = {E}<br/>CLOSED = ∅<br/>g(E) = 0, f(E) = h(E)"]
+            B --> C{"Is OPEN list empty?"}
+            C -- "Yes" --> D["FAIL: No Solution"]
+            C -- "No" --> E["Select node 'n' from OPEN with min f(n)"]
+            E --> F["Move node 'n' from OPEN to CLOSED"]
+            F --> G{"Is node n == G?"}
+            G -- "Yes" --> H["STOP: Goal Found"]
+            G -- "No" --> I["Expand node 'n' to generate successors"]
+            I --> J["For each successor:<br/>Calculate g, h, and f(x) = g(x) + h(x)"]
+            J --> K["Add/Update OPEN and CLOSED lists"]
+            K --> C
+        </div>
+        """
+    text = re.sub(
+        r'┌─────────────────────────┐.*?└─────────────────────────┘',
+        mermaid_block,
+        text,
+        flags=re.DOTALL,
+    )
+
+  return text
 
 
 def scrape_single_chat(url: str, apply_filter: bool) -> list:
@@ -246,7 +278,7 @@ def scrape_single_chat(url: str, apply_filter: bool) -> list:
               text_content = clean_assistant_text(text_content)
 
             if text_content.strip():
-              parsed_text = parse_custom_grid_tags(text_content)
+              parsed_text = parse_custom_tags_and_flowcharts(text_content)
               formatted_html = markdown.markdown(
                   parsed_text, extensions=["fenced_code", "tables"]
               )
@@ -657,7 +689,11 @@ def build_html_document(
         <meta charset="utf-8">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/{highlight_theme}.min.css">
         <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-        <script>hljs.highlightAll();</script>
+        <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+        <script>
+            hljs.highlightAll();
+            mermaid.initialize({{ startOnLoad: true, theme: 'default' }});
+        </script>
         <style>
             * {{ box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
             {page_num_css}
