@@ -105,7 +105,7 @@ else:
 output_filename = st.text_input("Output Filename", value="chatgpt_export")
 
 def scrape_single_chat(url: str) -> list:
-    """Scrapes and cleans messages from a single share link with resilient fallback selectors."""
+    """Scrapes and cleans messages from a single share link with anti-bot headers and resilient selectors."""
     clean_url = url.split("?")[0].strip()
     if not clean_url:
         return []
@@ -121,14 +121,21 @@ def scrape_single_chat(url: str) -> list:
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled"
+                "--disable-blink-features=AutomationControlled",
+                "--disable-infobars",
+                "--window-size=1280,800"
             ]
         )
         
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800},
-            locale="en-US"
+            locale="en-US",
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Referer": "https://chatgpt.com/"
+            }
         )
         
         context.add_init_script("""
@@ -146,29 +153,12 @@ def scrape_single_chat(url: str) -> list:
             browser.close()
             raise Exception(f"Could not load {clean_url}. (Details: {inner_err})")
 
+        page.wait_for_timeout(4000) # Give extra time for React hydration
+
         page_text = page.inner_text("body")
-        if "Log in or sign up" in page_text and "conversation" not in page_text.lower():
+        if "Log in to get answers" in page_text or ("Log in or sign up" in page_text and "conversation" not in page_text.lower()):
             browser.close()
-            raise Exception(f"Access blocked (Login wall): {clean_url}")
-
-        page.evaluate("""async () => {
-            await new Promise((resolve) => {
-                let totalHeight = 0;
-                let distance = 300;
-                let timer = setInterval(() => {
-                    let scrollHeight = document.body.scrollHeight;
-                    window.scrollBy(0, distance);
-                    totalHeight += distance;
-
-                    if(totalHeight >= scrollHeight - window.innerHeight) {
-                        clearInterval(timer);
-                        resolve();
-                    }
-                }, 100);
-            });
-        }""")
-        
-        page.wait_for_timeout(3000)
+            raise Exception(f"OpenAI presented a login wall or bot challenge for: {clean_url}")
 
         messages = page.evaluate("""() => {
             const turns = [];
