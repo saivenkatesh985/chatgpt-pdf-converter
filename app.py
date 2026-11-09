@@ -2,6 +2,7 @@ import os
 import tempfile
 import datetime
 import requests
+import markdown
 import streamlit as st
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -92,7 +93,7 @@ else:
 output_filename = st.text_input("Output Filename", value="chatgpt_export")
 
 def scrape_single_chat(url: str) -> list:
-    """Fetches chat content directly via ChatGPT's backend share API, bypassing browser bot blocks."""
+    """Fetches chat content via ChatGPT's backend share API and parses Markdown into formatted HTML."""
     clean_url = url.split("?")[0].strip()
     if not clean_url:
         return []
@@ -100,7 +101,6 @@ def scrape_single_chat(url: str) -> list:
     if "/g/" in clean_url or "g-p-" in clean_url:
         raise Exception(f"Custom GPT links require login: {clean_url}")
 
-    # Extract the share ID from the URL
     parts = clean_url.rstrip("/").split("/")
     share_id = parts[-1]
     
@@ -136,7 +136,7 @@ def scrape_single_chat(url: str) -> list:
                     text_content = "".join([str(p) for p in content_parts if isinstance(p, str)])
                     if text_content.strip():
                         role_label = "User" if author == "user" else "ChatGPT"
-                        formatted_html = f"<p>{text_content.replace(chr(10), '<br>')}</p>"
+                        formatted_html = markdown.markdown(text_content, extensions=['fenced_code', 'tables'])
                         messages.append({
                             "role": role_label,
                             "html": formatted_html

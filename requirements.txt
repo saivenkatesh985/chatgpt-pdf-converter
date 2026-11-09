@@ -1,3 +1,4 @@
 streamlit
-playwright
+requests
 python-docx
+markdown
