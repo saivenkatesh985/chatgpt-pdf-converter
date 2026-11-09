@@ -42,7 +42,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("📄 ChatGPT Link to Multi-Format Document Studio")
+st.title("⬇️ ChatGPT Link to Multi-Format Document Studio")
 st.markdown(
     "Transform single or multiple public ChatGPT conversations into"
     " professionally styled Word, Markdown, PDF, or HTML documents."
