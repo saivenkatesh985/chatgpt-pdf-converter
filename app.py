@@ -47,7 +47,7 @@ st.title("⬇️ ChatGPT Link to Multi-Format Document Studio")
 st.markdown(
     "Transform single or multiple public ChatGPT conversations into"
     " professionally styled Word, Markdown, PDF, or HTML documents with advanced"
-    " custom controls, interactive diagrams, and clean math notation."
+    " custom controls, interactive diagrams, and robust UTF-8 math notation."
 )
 
 # --- SIDEBAR: ORGANIZED LAYOUT STUDIO ---
@@ -162,11 +162,17 @@ def clean_assistant_text(text: str) -> str:
 
 
 def parse_math_expression_blocks(text: str) -> str:
-  """Cleans bracketed math expressions, cost sequences, and boxed formulas into neat visual equation blocks."""
+  """Cleans LaTeX tags, replaces \rightarrow with UTF-8 arrows (→), and formats math/path blocks cleanly."""
   
-  # 1. Convert LaTeX boxed formulas
+  # 1. Replace LaTeX arrows with clean UTF-8 unicode arrows globally
+  text = text.replace(r'\rightarrow', ' → ').replace(r'\to', ' → ')
+
+  # 2. Clean LaTeX \text{...} macros to plain UTF-8 text
+  text = re.sub(r'\\text\{([^}]+)\}', r'\1', text)
+
+  # 3. Convert LaTeX boxed formulas
   def boxed_replacer(match):
-    formula = match.group(1)
+    formula = match.group(1).replace(r'\text{', '').replace('}', '')
     return f'''
         <div style="font-family: Consolas, Monaco, monospace; background: rgba(37, 99, 235, 0.08); 
                     border: 1px solid #2563eb; padding: 8px 14px; margin: 10px 0; 
@@ -177,21 +183,21 @@ def parse_math_expression_blocks(text: str) -> str:
   text = re.sub(r'\[\s*\\boxed\{([^}]+)\}\s*\]', boxed_replacer, text)
   text = re.sub(r'\\boxed\{([^}]+)\}', r'\1', text)
 
-  # 2. Format step cost sequences or paths like [ E\rightarrow F\rightarrow D\rightarrow C\rightarrow G ]
+  # 4. Format path sequences containing unicode arrows like [ E → F → D → C → G ]
   def path_replacer(match):
-    path_expr = match.group(1).replace(r'\rightarrow', ' → ')
+    path_expr = match.group(1).strip()
     return f'''
         <div style="font-family: Consolas, Monaco, monospace; background: rgba(16, 163, 127, 0.08); 
                     border-left: 3px solid #10a37f; padding: 6px 12px; margin: 8px 0; 
-                    border-radius: 4px; font-weight: bold; font-size: 1em;">
-            Path: {path_expr}
+                    border-radius: 4px; font-weight: bold; font-size: 1em; display: inline-block; width: 100%;">
+            Path Sequence: {path_expr}
         </div>
     '''
-  text = re.sub(r'\[\s*([A-Z]\s*\\rightarrow\s*[A-Z].*?)\s*\]', path_replacer, text)
+  text = re.sub(r'\[\s*([A-Z]\s*→\s*[A-Z].*?)\s*\]', path_replacer, text)
 
-  # 3. Format standard math expressions and evaluations [ f(n)=g(n)+h(n) ], [ Total Cost=14 ], etc.
+  # 5. Format standard math expressions and evaluations [ f(n)=g(n)+h(n) ], [ Total Cost=14 ]
   def math_replacer(match):
-    expr = match.group(1).replace(r'\quad', '&nbsp;&nbsp;&nbsp;&nbsp;').replace(r'\text{', '').replace('}', '')
+    expr = match.group(1).replace(r'\quad', '&nbsp;&nbsp;&nbsp;&nbsp;')
     return f'''
         <div style="font-family: Consolas, Monaco, monospace; background: rgba(37, 99, 235, 0.05); 
                     border-left: 3px solid #2563eb; padding: 6px 12px; margin: 6px 0; 
@@ -199,7 +205,7 @@ def parse_math_expression_blocks(text: str) -> str:
             <code>{expr}</code>
         </div>
     '''
-  text = re.sub(r'\[\s*([a-zA-Z\(\)\=\+\-\,\s0-9\.]+)\s*\]', math_replacer, text)
+  text = re.sub(r'\[\s*([a-zA-Z0-9\(\)\=\+\-\,\s\.\→]+)\s*\]', math_replacer, text)
   return text
 
 
@@ -238,7 +244,7 @@ def parse_custom_tags_and_flowcharts(text: str) -> str:
       flags=re.DOTALL,
   )
 
-  # 2. Format math expressions and formulas
+  # 2. Format UTF-8 math expressions and formulas
   text = parse_math_expression_blocks(text)
 
   # 3. Convert A* Flowchart ASCII block into an interactive Mermaid graph
@@ -729,9 +735,9 @@ def build_html_document(
 
   full_html = f"""
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
-        <meta charset="utf-8">
+        <meta charset="UTF-8">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/{highlight_theme}.min.css">
         <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
