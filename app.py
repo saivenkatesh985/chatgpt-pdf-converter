@@ -47,7 +47,7 @@ st.title("⬇️ ChatGPT Link to Multi-Format Document Studio")
 st.markdown(
     "Transform single or multiple public ChatGPT conversations into"
     " professionally styled Word, Markdown, PDF, or HTML documents with advanced"
-    " custom controls and interactive diagrams."
+    " custom controls, interactive diagrams, and clean math notation."
 )
 
 # --- SIDEBAR: ORGANIZED LAYOUT STUDIO ---
@@ -161,8 +161,24 @@ def clean_assistant_text(text: str) -> str:
   return pattern.sub("", text).strip()
 
 
+def parse_math_expression_blocks(text: str) -> str:
+  """Formats bracketed math cost expressions [ g(...) = ... ] nicely for documents."""
+  def math_replacer(match):
+    expr = match.group(1).replace(r'\quad', '&nbsp;&nbsp;&nbsp;&nbsp;')
+    return f'''
+        <div style="font-family: Consolas, Monaco, monospace; background: rgba(37, 99, 235, 0.05); 
+                    border-left: 3px solid #2563eb; padding: 6px 12px; margin: 8px 0; 
+                    border-radius: 4px; font-size: 0.95em; display: inline-block; width: 100%;">
+            <code>{expr}</code>
+        </div>
+    '''
+  # Regex pattern to capture [ g(...) = ... ] or [ f(...) = ... ]
+  text = re.sub(r'\[\s*([gf]\s*\(.*?\)\s*=\s*.*?)\s*\]', math_replacer, text)
+  return text
+
+
 def parse_custom_tags_and_flowcharts(text: str) -> str:
-  """Converts custom grid elements and replaces flowchart representations with valid interactive Mermaid diagrams."""
+  """Converts custom grid elements, math expressions, and flowcharts into valid interactive blocks."""
 
   # 1. Parse Tic-Tac-Toe / Custom Grid Tags
   def grid_replacer(match):
@@ -196,7 +212,10 @@ def parse_custom_tags_and_flowcharts(text: str) -> str:
       flags=re.DOTALL,
   )
 
-  # 2. Convert A* Flowchart ASCII block into an interactive Mermaid graph
+  # 2. Format math expressions
+  text = parse_math_expression_blocks(text)
+
+  # 3. Convert A* Flowchart ASCII block into an interactive Mermaid graph
   if "Initialize OPEN" in text or "START" in text and "CLOSED" in text:
     mermaid_block = """
         <div class="mermaid" style="margin: 20px 0; background: rgba(0,0,0,0.02); padding: 15px; border-radius: 8px; border: 1px solid #e1e4e8;">
