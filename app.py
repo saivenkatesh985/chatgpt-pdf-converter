@@ -162,9 +162,9 @@ def clean_assistant_text(text: str) -> str:
 
 
 def parse_math_expression_blocks(text: str) -> str:
-  """Cleans and formats bracketed math cost expressions and boxed latex formulas into standard readable text."""
+  """Cleans bracketed math expressions, cost sequences, and boxed formulas into neat visual equation blocks."""
   
-  # 1. Convert LaTeX boxed formulas like [ \boxed{f(n)=g(n)+h(n)} ] or similar into clean blocks
+  # 1. Convert LaTeX boxed formulas
   def boxed_replacer(match):
     formula = match.group(1)
     return f'''
@@ -177,17 +177,29 @@ def parse_math_expression_blocks(text: str) -> str:
   text = re.sub(r'\[\s*\\boxed\{([^}]+)\}\s*\]', boxed_replacer, text)
   text = re.sub(r'\\boxed\{([^}]+)\}', r'\1', text)
 
-  # 2. Format standard bracketed math cost expressions [ g(...) = ... ]
+  # 2. Format step cost sequences or paths like [ E\rightarrow F\rightarrow D\rightarrow C\rightarrow G ]
+  def path_replacer(match):
+    path_expr = match.group(1).replace(r'\rightarrow', ' → ')
+    return f'''
+        <div style="font-family: Consolas, Monaco, monospace; background: rgba(16, 163, 127, 0.08); 
+                    border-left: 3px solid #10a37f; padding: 6px 12px; margin: 8px 0; 
+                    border-radius: 4px; font-weight: bold; font-size: 1em;">
+            Path: {path_expr}
+        </div>
+    '''
+  text = re.sub(r'\[\s*([A-Z]\s*\\rightarrow\s*[A-Z].*?)\s*\]', path_replacer, text)
+
+  # 3. Format standard math expressions and evaluations [ f(n)=g(n)+h(n) ], [ Total Cost=14 ], etc.
   def math_replacer(match):
-    expr = match.group(1).replace(r'\quad', '&nbsp;&nbsp;&nbsp;&nbsp;')
+    expr = match.group(1).replace(r'\quad', '&nbsp;&nbsp;&nbsp;&nbsp;').replace(r'\text{', '').replace('}', '')
     return f'''
         <div style="font-family: Consolas, Monaco, monospace; background: rgba(37, 99, 235, 0.05); 
-                    border-left: 3px solid #2563eb; padding: 6px 12px; margin: 8px 0; 
+                    border-left: 3px solid #2563eb; padding: 6px 12px; margin: 6px 0; 
                     border-radius: 4px; font-size: 0.95em; display: inline-block; width: 100%;">
             <code>{expr}</code>
         </div>
     '''
-  text = re.sub(r'\[\s*([gf]\s*\(.*?\)\s*=\s*.*?)\s*\]', math_replacer, text)
+  text = re.sub(r'\[\s*([a-zA-Z\(\)\=\+\-\,\s0-9\.]+)\s*\]', math_replacer, text)
   return text
 
 
@@ -226,7 +238,7 @@ def parse_custom_tags_and_flowcharts(text: str) -> str:
       flags=re.DOTALL,
   )
 
-  # 2. Format math expressions and boxed formulas
+  # 2. Format math expressions and formulas
   text = parse_math_expression_blocks(text)
 
   # 3. Convert A* Flowchart ASCII block into an interactive Mermaid graph
