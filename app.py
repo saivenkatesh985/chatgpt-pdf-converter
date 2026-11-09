@@ -162,15 +162,11 @@ def clean_assistant_text(text: str) -> str:
 
 
 def parse_math_expression_blocks(text: str) -> str:
-  """Cleans LaTeX tags, replaces \rightarrow with UTF-8 arrows (→), and formats math/path blocks cleanly."""
-  
-  # 1. Replace LaTeX arrows with clean UTF-8 unicode arrows globally
+  """Robustly parses LaTeX tags, replaces arrows with UTF-8, and formats A* formulas & path blocks cleanly."""
+  text = text.replace(r'\tilde{[f}', 'f').replace(r'\tilde{f}', 'f')
   text = text.replace(r'\rightarrow', ' → ').replace(r'\to', ' → ')
-
-  # 2. Clean LaTeX \text{...} macros to plain UTF-8 text
   text = re.sub(r'\\text\{([^}]+)\}', r'\1', text)
 
-  # 3. Convert LaTeX boxed formulas
   def boxed_replacer(match):
     formula = match.group(1).replace(r'\text{', '').replace('}', '')
     return f'''
@@ -183,7 +179,6 @@ def parse_math_expression_blocks(text: str) -> str:
   text = re.sub(r'\[\s*\\boxed\{([^}]+)\}\s*\]', boxed_replacer, text)
   text = re.sub(r'\\boxed\{([^}]+)\}', r'\1', text)
 
-  # 4. Format path sequences containing unicode arrows like [ E → F → D → C → G ]
   def path_replacer(match):
     path_expr = match.group(1).strip()
     return f'''
@@ -193,11 +188,10 @@ def parse_math_expression_blocks(text: str) -> str:
             Path Sequence: {path_expr}
         </div>
     '''
-  text = re.sub(r'\[\s*([A-Z]\s*→\s*[A-Z].*?)\s*\]', path_replacer, text)
+  text = re.sub(r'\[\s*([A-Z]\s*→\s*[A-Z](?:\s*→\s*[A-Z])+)\s*\]', path_replacer, text)
 
-  # 5. Format standard math expressions and evaluations [ f(n)=g(n)+h(n) ], [ Total Cost=14 ]
   def math_replacer(match):
-    expr = match.group(1).replace(r'\quad', '&nbsp;&nbsp;&nbsp;&nbsp;')
+    expr = match.group(1).replace(r'\quad', '&nbsp;&nbsp;&nbsp;&nbsp;').strip()
     return f'''
         <div style="font-family: Consolas, Monaco, monospace; background: rgba(37, 99, 235, 0.05); 
                     border-left: 3px solid #2563eb; padding: 6px 12px; margin: 6px 0; 
@@ -205,73 +199,13 @@ def parse_math_expression_blocks(text: str) -> str:
             <code>{expr}</code>
         </div>
     '''
-  text = re.sub(r'\[\s*([a-zA-Z0-9\(\)\=\+\-\,\s\.\→]+)\s*\]', math_replacer, text)
+  text = re.sub(r'\[\s*([^\[\]]+?(?:=|\+|\-|[a-zA-Z]\()[^\[\]]*?)\s*\]', math_replacer, text)
+
   return text
 
 
 def parse_custom_tags_and_flowcharts(text: str) -> str:
-  """Converts custom grid elements, math expressions, and flowcharts into valid interactive blocks."""
-
-  # 1. Parse Tic-Tac-Toe / Custom Grid Tags
-  def grid_replacer(match):
-    cells_str = match.group(1)
-    cells = [c.strip().strip('"\'') for c in cells_str.split(",")]
-    grid_html = (
-        '<div style="display: grid; grid-template-columns: repeat(3, 60px); gap:'
-        ' 6px; margin: 16px 0;">'
-    )
-    for cell in cells:
-      display_char = cell if cell else "&nbsp;"
-      color = (
-          "#2563eb"
-          if cell == "X"
-          else ("#dc2626" if cell == "O" else "#6b7280")
-      )
-      grid_html += f"""
-        <div style="width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; 
-                    font-size: 1.5rem; font-weight: bold; color: {color}; border: 2px solid {color}; 
-                    border-radius: 8px; background: rgba(0,0,0,0.02);">
-            {display_char}
-        </div>
-      """
-    grid_html += "</div>"
-    return grid_html
-
-  text = re.sub(
-      r'\{#each\s+\[(.*?)\]\s+as\s+cell,\s*i\}(.*?)\{/each\}',
-      grid_replacer,
-      text,
-      flags=re.DOTALL,
-  )
-
-  # 2. Format UTF-8 math expressions and formulas
   text = parse_math_expression_blocks(text)
-
-  # 3. Convert A* Flowchart ASCII block into an interactive Mermaid graph
-  if "Initialize OPEN" in text or "START" in text and "CLOSED" in text:
-    mermaid_block = """
-        <div class="mermaid" style="margin: 20px 0; background: rgba(0,0,0,0.02); padding: 15px; border-radius: 8px; border: 1px solid #e1e4e8;">
-        graph TD
-            A["START: Start = E"] --> B["Initialize OPEN = {E}<br/>CLOSED = ∅<br/>g(E) = 0, f(E) = h(E)"]
-            B --> C{"Is OPEN list empty?"}
-            C -- "Yes" --> D["FAIL: No Solution"]
-            C -- "No" --> E["Select node 'n' from OPEN with min f(n)"]
-            E --> F["Move node 'n' from OPEN to CLOSED"]
-            F --> G{"Is node n == G?"}
-            G -- "Yes" --> H["STOP: Goal Found"]
-            G -- "No" --> I["Expand node 'n' to generate successors"]
-            I --> J["For each successor:<br/>Calculate g, h, and f(x) = g(x) + h(x)"]
-            J --> K["Add/Update OPEN and CLOSED lists"]
-            K --> C
-        </div>
-        """
-    text = re.sub(
-        r'┌─────────────────────────┐.*?└─────────────────────────┘',
-        mermaid_block,
-        text,
-        flags=re.DOTALL,
-    )
-
   return text
 
 
@@ -457,6 +391,20 @@ def build_pdf_document(
       fontSize=10,
       textColor=colors.HexColor("#222222"),
       spaceAfter=10,
+      leading=14,
+  )
+  math_box_style = ParagraphStyle(
+      "MathBoxStyle",
+      parent=styles["Normal"],
+      fontSize=9.5,
+      fontName="Courier",
+      textColor=colors.HexColor("#2563eb"),
+      backColor=colors.HexColor("#eff6ff"),
+      borderColor=colors.HexColor("#2563eb"),
+      borderWidth=1,
+      borderPadding=6,
+      spaceBefore=6,
+      spaceAfter=6,
   )
   footer_style = ParagraphStyle(
       "FooterStyle",
@@ -482,8 +430,19 @@ def build_pdf_document(
     for msg in messages:
       role = msg["role"]
       story.append(Paragraph(f"<b>{role}:</b>", role_style))
-      clean_text = re.sub("<[^<]+?>", "", msg["html"])
-      story.append(Paragraph(clean_text, body_style))
+      
+      # Convert parsed HTML paragraphs and math blocks cleanly into ReportLab flowables
+      html_content = msg["html"]
+      # Split by divs / paragraphs or clean up tags for ReportLab compatibility
+      paragraphs = re.split(r'(?i)</?(?:div|p|br|code)[^>]*>', html_content)
+      for p_text in paragraphs:
+        p_clean = p_text.strip()
+        if p_clean:
+          # Check if it's a math expression block
+          if "font-family: Consolas" in html_content or "border-left:" in html_content or "[" in p_clean:
+            story.append(Paragraph(p_clean, math_box_style))
+          else:
+            story.append(Paragraph(p_clean, body_style))
       story.append(Spacer(1, 6))
 
   if footer_text:
@@ -1135,7 +1094,6 @@ with tab_download:
             final_name = f"{base_filename}.md"
         else:  # HTML
           with st.spinner("Generating HTML file..."):
-            # FIXED: Now calls build_html_document with ALL custom settings/styles so it matches the preview perfectly!
             file_data = build_html_document(
                 st.session_state.chat_sections,
                 theme,
