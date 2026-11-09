@@ -71,7 +71,7 @@ with st.sidebar.expander("📌 Document & Branding", expanded=True):
     )
     font_style = st.selectbox("Font Style", ["Sans-serif", "Serif", "Monospace"])
     custom_title = st.text_input(
-        "Document Title Text", value="ChatGPT Conversation Export"
+        "Document Title Text", value="", placeholder="e.g. My Chat Export (optional)"
     )
     header_alignment = st.selectbox(
         "Header Alignment", ["Left", "Center", "Right"]
@@ -169,7 +169,7 @@ def clean_assistant_text(text: str) -> str:
 
 
 def parse_math_expression_blocks(text: str) -> str:
-    """Robustly parses LaTeX tags, replaces arrows with UTF-8, and formats A* formulas & path blocks cleanly."""
+    """Robustly parses LaTeX tags, replaces arrows with UTF-8, and formats formulas & path blocks cleanly."""
     text = text.replace(r'\tilde{[f}', 'f').replace(r'\tilde{f}', 'f')
     text = text.replace(r'\rightarrow', ' → ').replace(r'\to', ' → ')
     text = re.sub(r'\\text\{([^}]+)\}', r'\1', text)
@@ -213,6 +213,21 @@ def parse_math_expression_blocks(text: str) -> str:
 
 def parse_custom_tags_and_flowcharts(text: str) -> str:
     text = parse_math_expression_blocks(text)
+    
+    # Detect ASCII vertical flowchart blocks and wrap them in a polished styled container box
+    if '│' in text or '▼' in text:
+        lines = text.split('\n')
+        has_flow_symbols = sum(1 for l in lines if '│' in l or '▼' in l)
+        if has_flow_symbols >= 2:
+            text = f'''
+            <div style="font-family: Consolas, Monaco, monospace; background: rgba(16, 163, 127, 0.05); 
+                        border: 1px solid #10a37f; padding: 14px 18px; margin: 16px 0; 
+                        border-radius: 8px; line-height: 1.5; white-space: pre-wrap; font-size: 0.95em; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                <div style="font-weight: bold; color: #10a37f; margin-bottom: 8px; font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.5px;">📊 Flowchart & Diagram Sequence</div>
+                {text}
+            </div>
+            '''
+            
     return text
 
 
@@ -462,16 +477,14 @@ def build_html_document(
         else ""
     )
 
-    header_html = (
-        f'''
+    header_html = ""
+    if show_header_title and custom_title and custom_title.strip():
+        header_html = f'''
     <div style="font-size: 1.4em; font-weight: bold; text-align: {header_alignment.lower()}; border-bottom: 2px solid {chosen_accent}; padding-bottom: 10px; margin-bottom: 24px; color: {text_color} !important;">
         {custom_title}
         {timestamp_html}
     </div>
     '''
-        if show_header_title
-        else ""
-    )
 
     toc_html = ""
     if include_toc and len(active_sections) > 1:
@@ -657,7 +670,7 @@ def convert_chats_to_markdown(
     active_sections = get_filtered_sections(
         chat_sections, message_filter_role, selection_mode, allowed_ids
     )
-    md_content = f"# {custom_title}\n\n"
+    md_content = f"# {custom_title}\n\n" if custom_title and custom_title.strip() else ""
     for sec_title, messages in active_sections:
         if sec_title:
             md_content += f"## {sec_title}\n\n"
@@ -699,7 +712,7 @@ def convert_chats_to_docx(
         r_page.font.color.rgb = RGBColor(120, 120, 120)
         add_docx_page_number(p.add_run())
 
-    if custom_title:
+    if custom_title and custom_title.strip():
         title_p = doc.add_paragraph()
         title_run = title_p.add_run(custom_title)
         title_run.bold = True
@@ -826,7 +839,7 @@ with tab_input:
                         sec_title = (
                             link_titles.get(url, f"Conversation Section #{i+1}")
                             if input_mode == "Bulk Links (Multiple)"
-                            else (custom_title if show_header_title else "Conversation")
+                            else (custom_title if show_header_title and custom_title else "Conversation")
                         )
                         st.session_state.chat_sections.append((sec_title, msgs))
                 except Exception as e:
