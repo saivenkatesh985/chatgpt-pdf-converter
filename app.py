@@ -172,7 +172,7 @@ def clean_assistant_text(text: str) -> str:
 
 
 def parse_math_expression_blocks(text: str) -> str:
-    """Robustly parses LaTeX tags, replaces arrows with UTF-8, and formats A* formulas & path blocks cleanly."""
+    """Robustly parses LaTeX tags, replaces arrows with UTF-8, and formats formulas & path blocks cleanly."""
     text = text.replace(r'\tilde{[f}', 'f').replace(r'\tilde{f}', 'f')
     text = text.replace(r'\rightarrow', ' → ').replace(r'\to', ' → ')
     text = re.sub(r'\\text\{([^}]+)\}', r'\1', text)
@@ -502,7 +502,6 @@ def build_html_document(
         " </div>"
     ) if watermark else ""
 
-    page_bottom_left_content = f'"{footer_wm}"' if footer_wm else '""'
     page_bottom_right_content = (
         '"Page " counter(page) " of " counter(pages)'
         if include_page_nos
@@ -511,11 +510,6 @@ def build_html_document(
 
     page_num_css = f'''
     @page {{
-        @bottom-left {{
-            content: {page_bottom_left_content};
-            font-size: 8pt;
-            color: #888888;
-        }}
         @bottom-right {{
             content: {page_bottom_right_content};
             font-size: 8pt;
@@ -523,6 +517,15 @@ def build_html_document(
         }}
     }}
     '''
+
+    # Render footer watermark as an actual HTML element at the bottom of the page so hyperlink tags work!
+    watermark_footer_html = (
+        f'''
+        <div style="margin-top: 50px; padding-top: 15px; border-top: 1px solid {border_color}; font-size: 0.85em; text-align: center; color: {text_color}; opacity: 0.8;">
+            {footer_wm}
+        </div>
+        '''
+    ) if footer_wm else ""
 
     divider_html = (
         f'''<hr style="border: none; border-top: 1px solid {border_color};'''
@@ -643,6 +646,7 @@ def build_html_document(
             {toc_html}
             {document_body_html}
             {footer_html}
+            {watermark_footer_html}
         </div>
     </body>
     </html>
@@ -690,7 +694,6 @@ def convert_chats_to_docx(
     p = footer.paragraphs[0]
 
     if footer_wm:
-        # Strip HTML tags for docx runner safely
         clean_wm = re.sub(r'<[^>]*?>', '', footer_wm)
         r_wm = p.add_run(clean_wm)
         r_wm.font.size = Pt(8.5)
@@ -942,7 +945,6 @@ with tab_download:
                 if not base_filename:
                     base_filename = "chat_export"
 
-                # Generate live preview HTML on the fly for PDF/HTML exports
                 current_html = build_html_document(
                     st.session_state.chat_sections,
                     theme,
