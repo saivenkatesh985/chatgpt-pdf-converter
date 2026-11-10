@@ -229,9 +229,7 @@ def scrape_single_chat(url: str, apply_filter: bool) -> list:
     if not clean_url:
         return []
 
-    if "/g/" in clean_url or "g-p-" in clean_url:
-        raise Exception(f"Custom GPT links require login: {clean_url}")
-
+    # Support both normal shares and shared Custom GPT links (which contain /shared/c/)
     parts = clean_url.rstrip("/").split("/")
     share_id = parts[-1]
 
@@ -797,7 +795,7 @@ with tab_input:
 
     if input_mode == "Single Link":
         share_url_single = st.text_input(
-            "ChatGPT Share Link", placeholder="https://chatgpt.com/share/..."
+            "ChatGPT Share Link", placeholder="https://chatgpt.com/share/... or Custom GPT share link"
         )
         if share_url_single.strip():
             urls = [share_url_single.strip()]
@@ -805,7 +803,7 @@ with tab_input:
         share_urls_textarea = st.text_area(
             "ChatGPT Share Links (Paste one link per line)",
             placeholder=(
-                "https://chatgpt.com/share/...\nhttps://chatgpt.com/share/..."
+                "https://chatgpt.com/share/...\nhttps://chatgpt.com/g/.../shared/c/..."
             ),
             height=90,
         )
