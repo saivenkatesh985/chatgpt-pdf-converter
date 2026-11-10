@@ -81,7 +81,10 @@ with st.sidebar.expander("📌 Document & Branding", expanded=True):
     watermark_opacity = st.slider(
         "Watermark Opacity (%)", min_value=1, max_value=15, value=4, step=1
     )
-    footer_watermark_text = st.text_input("Bottom Footer Watermark Text", value="Exported by ChatGPT Document Studio · https://chatgpt-pdf-converter.streamlit.app")
+    footer_watermark_text = st.text_input(
+        "Bottom Footer Watermark Text", 
+        value="Exported by <a href='https://chatgpt-pdf-converter.streamlit.app' target='_blank' style='color: inherit; text-decoration: underline;'>ChatGPT Document Studio</a>"
+    )
 
 with st.sidebar.expander("📐 Spacing & Geometry", expanded=False):
     font_size = st.text_input("Font Size", value="16px")
@@ -259,9 +262,17 @@ def scrape_single_chat(url: str, apply_filter: bool) -> list:
                 author = message.get("author", {}).get("role")
                 if author in ["user", "assistant"]:
                     content_parts = message.get("content", {}).get("parts", [])
-                    text_content = "".join(
-                        [str(p) for p in content_parts if isinstance(p, str)]
-                    )
+                    extracted_texts = []
+                    for p in content_parts:
+                        if isinstance(p, str):
+                            extracted_texts.append(p)
+                        elif isinstance(p, dict):
+                            img_url = p.get("url") or p.get("asset_pointer") or p.get("file_url")
+                            if img_url:
+                                extracted_texts.append(f"\n\n![Image/Attachment]({img_url})\n\n")
+                            elif "text" in p:
+                                extracted_texts.append(str(p["text"]))
+                    text_content = "".join(extracted_texts)
                     text_content = re.sub(r".*?", "", text_content)
 
                     if text_content.strip():
@@ -687,7 +698,8 @@ def convert_chats_to_docx(
     p = footer.paragraphs[0]
 
     if footer_wm:
-        r_wm = p.add_run(footer_wm)
+        clean_wm = re.sub(r'<[^>]*?>', '', footer_wm)
+        r_wm = p.add_run(clean_wm)
         r_wm.font.size = Pt(8.5)
         r_wm.font.color.rgb = RGBColor(120, 120, 120)
         if include_page_nos:
@@ -803,9 +815,10 @@ with tab_input:
 
             st.markdown("##### ✏️ Custom Section Titles per Link")
             for idx, u in enumerate(raw_urls):
-                link_titles[u] = st.text_input(
+                link_titles[idx] = st.text_input(
                     f"Title for Link #{idx+1} ({u[:30]}...)",
                     value=f"Conversation Section #{idx+1}",
+                    key=f"bulk_title_{idx}"
                 )
         urls = raw_urls
 
@@ -824,7 +837,7 @@ with tab_input:
                     msgs = scrape_single_chat(url, enable_ai_filter)
                     if msgs:
                         sec_title = (
-                            link_titles.get(url, f"Conversation Section #{i+1}")
+                            link_titles.get(i, f"Conversation Section #{i+1}")
                             if input_mode == "Bulk Links (Multiple)"
                             else (custom_title if (show_header_title and custom_title and custom_title.strip()) else "")
                         )
@@ -937,7 +950,6 @@ with tab_download:
                 if not base_filename:
                     base_filename = "chat_export"
 
-                # Generate live preview HTML on the fly for PDF/HTML exports
                 current_html = build_html_document(
                     st.session_state.chat_sections,
                     theme,
