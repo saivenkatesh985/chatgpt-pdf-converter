@@ -81,10 +81,7 @@ with st.sidebar.expander("📌 Document & Branding", expanded=True):
     watermark_opacity = st.slider(
         "Watermark Opacity (%)", min_value=1, max_value=15, value=4, step=1
     )
-    footer_watermark_text = st.text_input(
-        "Bottom Footer Watermark Text", 
-        value="Exported by <a href='https://chatgpt-pdf-converter.streamlit.app' target='_blank' style='color: inherit; text-decoration: underline;'>ChatGPT Document Studio</a>"
-    )
+    footer_watermark_text = st.text_input("Bottom Footer Watermark Text", value="Exported by ChatGPT Document Studio · https://chatgpt-pdf-converter.streamlit.app")
 
 with st.sidebar.expander("📐 Spacing & Geometry", expanded=False):
     font_size = st.text_input("Font Size", value="16px")
@@ -172,7 +169,7 @@ def clean_assistant_text(text: str) -> str:
 
 
 def parse_math_expression_blocks(text: str) -> str:
-    """Robustly parses LaTeX tags, replaces arrows with UTF-8, and formats A* formulas & path blocks cleanly."""
+    """Robustly parses LaTeX tags, replaces arrows with UTF-8, and formats formulas & path blocks cleanly."""
     text = text.replace(r'\tilde{[f}', 'f').replace(r'\tilde{f}', 'f')
     text = text.replace(r'\rightarrow', ' → ').replace(r'\to', ' → ')
     text = re.sub(r'\\text\{([^}]+)\}', r'\1', text)
@@ -690,9 +687,7 @@ def convert_chats_to_docx(
     p = footer.paragraphs[0]
 
     if footer_wm:
-        # Strip HTML tags for docx runner safely
-        clean_wm = re.sub(r'<[^>]*?>', '', footer_wm)
-        r_wm = p.add_run(clean_wm)
+        r_wm = p.add_run(footer_wm)
         r_wm.font.size = Pt(8.5)
         r_wm.font.color.rgb = RGBColor(120, 120, 120)
         if include_page_nos:
