@@ -510,7 +510,6 @@ def build_html_document(
         " </div>"
     ) if watermark else ""
 
-    page_bottom_left_content = f'"{footer_wm}"' if footer_wm else '""'
     page_bottom_right_content = (
         '"Page " counter(page) " of " counter(pages)'
         if include_page_nos
@@ -519,11 +518,6 @@ def build_html_document(
 
     page_num_css = f'''
     @page {{
-        @bottom-left {{
-            content: {page_bottom_left_content};
-            font-size: 8pt;
-            color: #888888;
-        }}
         @bottom-right {{
             content: {page_bottom_right_content};
             font-size: 8pt;
@@ -531,6 +525,14 @@ def build_html_document(
         }}
     }}
     '''
+
+    watermark_footer_html = (
+        f'''
+        <div style="margin-top: 50px; padding-top: 15px; border-top: 1px solid {border_color}; font-size: 0.85em; text-align: center; color: {text_color}; opacity: 0.8;">
+            {footer_wm}
+        </div>
+        '''
+    ) if footer_wm else ""
 
     divider_html = (
         f'''<hr style="border: none; border-top: 1px solid {border_color};'''
@@ -651,6 +653,7 @@ def build_html_document(
             {toc_html}
             {document_body_html}
             {footer_html}
+            {watermark_footer_html}
         </div>
     </body>
     </html>
