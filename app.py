@@ -81,7 +81,10 @@ with st.sidebar.expander("📌 Document & Branding", expanded=True):
     watermark_opacity = st.slider(
         "Watermark Opacity (%)", min_value=1, max_value=15, value=4, step=1
     )
-    footer_watermark_text = st.text_input("Bottom Footer Watermark Text", value="Exported by ChatGPT Document Studio · https://chatgpt-pdf-converter.streamlit.app")
+    footer_watermark_text = st.text_input(
+        "Bottom Footer Watermark Text", 
+        value="Exported by <a href='https://chatgpt-pdf-converter.streamlit.app' target='_blank' style='color: inherit; text-decoration: underline;'>ChatGPT Studio</a>"
+    )
 
 with st.sidebar.expander("📐 Spacing & Geometry", expanded=False):
     font_size = st.text_input("Font Size", value="16px")
@@ -156,6 +159,9 @@ with st.sidebar.expander("⚙️ Structure & Filters", expanded=False):
 # --- SESSION STATE ---
 if "chat_sections" not in st.session_state:
     st.session_state.chat_sections = None
+
+if "bulk_links_data" not in st.session_state:
+    st.session_state.bulk_links_data = []
 
 
 # --- HELPER FUNCTIONS ---
@@ -507,7 +513,6 @@ def build_html_document(
         " </div>"
     ) if watermark else ""
 
-    page_bottom_left_content = f'"{footer_wm}"' if footer_wm else '""'
     page_bottom_right_content = (
         '"Page " counter(page) " of " counter(pages)'
         if include_page_nos
@@ -516,11 +521,6 @@ def build_html_document(
 
     page_num_css = f'''
     @page {{
-        @bottom-left {{
-            content: {page_bottom_left_content};
-            font-size: 8pt;
-            color: #888888;
-        }}
         @bottom-right {{
             content: {page_bottom_right_content};
             font-size: 8pt;
@@ -528,6 +528,14 @@ def build_html_document(
         }}
     }}
     '''
+
+    watermark_footer_html = (
+        f'''
+        <div style="margin-top: 50px; padding-top: 15px; border-top: 1px solid {border_color}; font-size: 0.85em; text-align: center; color: {text_color}; opacity: 0.8;">
+            {footer_wm}
+        </div>
+        '''
+    ) if footer_wm else ""
 
     divider_html = (
         f'''<hr style="border: none; border-top: 1px solid {border_color};'''
@@ -648,6 +656,7 @@ def build_html_document(
             {toc_html}
             {document_body_html}
             {footer_html}
+            {watermark_footer_html}
         </div>
     </body>
     </html>
@@ -695,7 +704,8 @@ def convert_chats_to_docx(
     p = footer.paragraphs[0]
 
     if footer_wm:
-        r_wm = p.add_run(footer_wm)
+        clean_wm = re.sub(r'<[^>]*?>', '', footer_wm)
+        r_wm = p.add_run(clean_wm)
         r_wm.font.size = Pt(8.5)
         r_wm.font.color.rgb = RGBColor(120, 120, 120)
         if include_page_nos:
@@ -778,8 +788,8 @@ with tab_input:
         horizontal=True,
     )
 
-    link_titles = {}
     urls = []
+    link_titles = {}
 
     if input_mode == "Single Link":
         share_url_single = st.text_input(
@@ -793,34 +803,48 @@ with tab_input:
             placeholder=(
                 "https://chatgpt.com/share/...\nhttps://chatgpt.com/share/..."
             ),
-            height=100,
+            height=90,
         )
-        bulk_order = st.radio(
-            "Bulk Chat Sequence Order:",
-            [
-                "Chronological (Top-to-Bottom)",
-                "Reverse Chronological (Bottom-to-Top)",
-            ],
-            horizontal=True,
-        )
+        
+        col_load, col_clear = st.columns([2, 5])
+        with col_load:
+            if st.button("📥 Load Links into Reorder Manager"):
+                raw_urls = [u.strip() for u in share_urls_textarea.split("\n") if u.strip()]
+                st.session_state.bulk_links_data = [
+                    {"Position": i + 1, "URL": u, "Title": f"Conversation Section #{i + 1}"}
+                    for i, u in enumerate(raw_urls)
+                ]
 
-        raw_urls = [u.strip() for u in share_urls_textarea.split("\n") if u.strip()]
-        if raw_urls:
-            if bulk_order.startswith("Reverse"):
-                raw_urls = raw_urls[::-1]
+        if st.session_state.bulk_links_data:
+            st.markdown("##### ↕️ Bulk Links & Custom Order Manager")
+            st.caption("Change position numbers, edit section titles inline, or reorder items as desired:")
+            
+            edited_df = st.data_editor(
+                st.session_state.bulk_links_data,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="bulk_order_editor",
+                column_config={
+                    "Position": st.column_config.NumberColumn("Order #", min_value=1, step=1, format="%d"),
+                    "URL": st.column_config.TextColumn("Share URL"),
+                    "Title": st.column_config.TextColumn("Section Title")
+                }
+            )
+            
+            # Sort links by the user-defined Position column
+            try:
+                sorted_links = sorted(edited_df, key=lambda x: int(x.get("Position", 1)))
+            except Exception:
+                sorted_links = edited_df
 
-            st.markdown("##### ✏️ Custom Section Titles per Link")
-            for idx, u in enumerate(raw_urls):
-                link_titles[idx] = st.text_input(
-                    f"Title for Link #{idx+1} ({u[:30]}...)",
-                    value=f"Conversation Section #{idx+1}",
-                    key=f"bulk_title_{idx}"
-                )
-        urls = raw_urls
+            urls = [row["URL"] for row in sorted_links if row.get("URL", "").strip()]
+            for idx, row in enumerate(sorted_links):
+                if row.get("URL", "").strip():
+                    link_titles[idx] = row.get("Title", f"Conversation Section #{idx + 1}")
 
     if st.button("🔍 Fetch Chat Content Now", type="primary"):
         if not urls:
-            st.error("Please enter at least one valid ChatGPT share link.")
+            st.error("Please enter and load at least one valid ChatGPT share link.")
         else:
             st.session_state.chat_sections = []
             progress_bar = st.progress(0)
@@ -946,7 +970,6 @@ with tab_download:
                 if not base_filename:
                     base_filename = "chat_export"
 
-                # Generate live preview HTML on the fly for PDF/HTML exports
                 current_html = build_html_document(
                     st.session_state.chat_sections,
                     theme,
