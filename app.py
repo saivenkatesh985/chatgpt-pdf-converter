@@ -83,7 +83,7 @@ with st.sidebar.expander("📌 Document & Branding", expanded=True):
     )
     footer_watermark_text = st.text_input(
         "Bottom Footer Watermark Text", 
-        value="Exported by <a href='https://chatgpt-pdf-converter.streamlit.app' target='_blank' style='color: inherit; text-decoration: underline;'>ChatGPT Document Studio</a>"
+        value="Exported by <a href='https://chatgpt-pdf-converter.streamlit.app' target='_blank' style='color: inherit; text-decoration: underline;'>ChatGPT Studio</a>"
     )
 
 with st.sidebar.expander("📐 Spacing & Geometry", expanded=False):
