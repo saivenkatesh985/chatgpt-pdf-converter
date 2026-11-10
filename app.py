@@ -81,6 +81,8 @@ with st.sidebar.expander("📌 Document & Branding", expanded=True):
     watermark_opacity = st.slider(
         "Watermark Opacity (%)", min_value=1, max_value=15, value=4, step=1
     )
+    
+    include_footer_wm = st.checkbox("Include Bottom Footer Watermark", value=False)
     footer_watermark_text = st.text_input(
         "Bottom Footer Watermark Text", 
         value="Exported by <a href='https://chatgpt-pdf-converter.streamlit.app' target='_blank' style='color: inherit; text-decoration: underline;'>ChatGPT Studio</a>"
@@ -656,7 +658,7 @@ def build_html_document(
             {toc_html}
             {document_body_html}
             {footer_html}
-            {watermark_footer_html}
+            {watermark_footer_html if include_footer_wm else ""}
         </div>
     </body>
     </html>
@@ -693,6 +695,7 @@ def convert_chats_to_docx(
     footer_text: str,
     include_page_nos: bool,
     footer_wm: str,
+    include_wm: bool,
 ) -> bytes:
     active_sections = get_filtered_sections(
         chat_sections, message_filter_role, selection_mode, allowed_ids
@@ -703,8 +706,9 @@ def convert_chats_to_docx(
     footer = section.footer
     p = footer.paragraphs[0]
 
-    if footer_wm:
-        clean_wm = re.sub(r'<[^>]*?>', '', footer_wm)
+    effective_wm = footer_wm if include_wm else ""
+    if effective_wm:
+        clean_wm = re.sub(r'<[^>]*?>', '', effective_wm)
         r_wm = p.add_run(clean_wm)
         r_wm.font.size = Pt(8.5)
         r_wm.font.color.rgb = RGBColor(120, 120, 120)
@@ -831,7 +835,6 @@ with tab_input:
                 }
             )
             
-            # Sort links by the user-defined Position column
             try:
                 sorted_links = sorted(edited_df, key=lambda x: int(x.get("Position", 1)))
             except Exception:
@@ -950,6 +953,35 @@ with tab_preview:
             footer_watermark_text,
             show_page_numbers,
             custom_css_injection,
+        ) if not include_footer_wm else build_html_document(
+            st.session_state.chat_sections,
+            theme,
+            layout_view_style,
+            font_style,
+            font_size,
+            line_height,
+            paragraph_spacing,
+            message_filter_role,
+            message_selection_mode,
+            selected_message_ids,
+            show_header_title,
+            custom_title,
+            header_alignment,
+            show_dividers,
+            show_timestamp,
+            footer_text,
+            chosen_accent,
+            code_theme,
+            block_radius,
+            margin_mm,
+            max_content_width,
+            enable_box_shadow,
+            generate_toc,
+            watermark_text,
+            watermark_opacity / 100.0,
+            footer_watermark_text,
+            show_page_numbers,
+            custom_css_injection,
         )
         with st.container(border=True):
             st.components.v1.html(live_preview_html, height=700, scrolling=True)
@@ -1018,6 +1050,7 @@ with tab_download:
                             footer_text,
                             show_page_numbers,
                             footer_watermark_text,
+                            include_footer_wm,
                         )
                         mime_type = (
                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
