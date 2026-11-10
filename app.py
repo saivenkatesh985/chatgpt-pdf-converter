@@ -81,7 +81,7 @@ with st.sidebar.expander("📌 Document & Branding", expanded=True):
     watermark_opacity = st.slider(
         "Watermark Opacity (%)", min_value=1, max_value=15, value=4, step=1
     )
-    footer_watermark_text = st.text_input("Bottom Footer Watermark Text", value="Exported by <a href='https://chatgpt-pdf-converter.streamlit.app' target='_blank'>ChatGPT Document Studio</a>")
+    footer_watermark_text = st.text_input("Bottom Footer Watermark Text", value="Exported by ChatGPT Document Studio · https://chatgpt-pdf-converter.streamlit.app")
 
 with st.sidebar.expander("📐 Spacing & Geometry", expanded=False):
     font_size = st.text_input("Font Size", value="16px")
