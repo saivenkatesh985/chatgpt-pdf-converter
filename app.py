@@ -52,7 +52,7 @@ st.markdown(
 
 st.title("⬇️ ChatGPT Link to Multi-Format Document Studio")
 st.markdown(
-    "Transform single or multiple public ChatGPT conversations into"
+    "Transform single conversations, project threads, or entire project hubs into"
     " professionally styled Word, Markdown, PDF, or HTML documents with advanced"
     " custom controls, interactive diagrams, and robust UTF-8 math notation."
 )
@@ -229,7 +229,7 @@ def scrape_single_chat(url: str, apply_filter: bool) -> list:
     if not clean_url:
         return []
 
-    # Support both normal shares and shared Custom GPT links (which contain /shared/c/)
+    # Supports standard shares, custom GPT shares (/shared/c/), and project links
     parts = clean_url.rstrip("/").split("/")
     share_id = parts[-1]
 
@@ -783,10 +783,16 @@ tab_input, tab_preview, tab_download = st.tabs(
 )
 
 with tab_input:
-    st.subheader("Enter ChatGPT Share Links")
+    st.subheader("Enter Share & Project Links")
     input_mode = st.radio(
         "Select Input Mode:",
-        ["Single Link", "Bulk Links (Multiple)"],
+        [
+            "Single Link", 
+            "Bulk Links (Multiple)", 
+            "Project Single Link", 
+            "Project Bulk Links", 
+            "Entire Project Link"
+        ],
         horizontal=True,
     )
 
@@ -795,22 +801,37 @@ with tab_input:
 
     if input_mode == "Single Link":
         share_url_single = st.text_input(
-            "ChatGPT Share Link", placeholder="https://chatgpt.com/share/... or Custom GPT share link"
+            "ChatGPT Share Link", placeholder="https://chatgpt.com/share/..."
         )
         if share_url_single.strip():
             urls = [share_url_single.strip()]
-    else:
+
+    elif input_mode == "Project Single Link":
+        project_url_single = st.text_input(
+            "Project Single Conversation Link", 
+            placeholder="https://chatgpt.com/g/g-p-.../shared/c/..."
+        )
+        if project_url_single.strip():
+            urls = [project_url_single.strip()]
+
+    elif input_mode == "Entire Project Link":
+        entire_project_url = st.text_input(
+            "Entire Project Hub / Base Link",
+            placeholder="https://chatgpt.com/g/g-p-... (or project workspace base URL)"
+        )
+        if entire_project_url.strip():
+            urls = [entire_project_url.strip()]
+
+    elif input_mode == "Bulk Links (Multiple)":
         share_urls_textarea = st.text_area(
             "ChatGPT Share Links (Paste one link per line)",
-            placeholder=(
-                "https://chatgpt.com/share/...\nhttps://chatgpt.com/g/.../shared/c/..."
-            ),
+            placeholder="https://chatgpt.com/share/...\nhttps://chatgpt.com/share/...",
             height=90,
         )
         
         col_load, col_clear = st.columns([2, 5])
         with col_load:
-            if st.button("📥 Load Links into Reorder Manager"):
+            if st.button("📥 Load Links into Reorder Manager", key="load_bulk"):
                 raw_urls = [u.strip() for u in share_urls_textarea.split("\n") if u.strip()]
                 st.session_state.bulk_links_data = [
                     {"Position": i + 1, "URL": u, "Title": f"Conversation Section #{i + 1}"}
@@ -843,9 +864,51 @@ with tab_input:
                 if row.get("URL", "").strip():
                     link_titles[idx] = row.get("Title", f"Conversation Section #{idx + 1}")
 
+    else:  # Project Bulk Links
+        project_urls_textarea = st.text_area(
+            "Project Share Links (Paste one project thread link per line)",
+            placeholder="https://chatgpt.com/g/g-p-.../shared/c/...\nhttps://chatgpt.com/g/g-p-.../shared/c/...",
+            height=90,
+        )
+        
+        col_load_p, col_clear_p = st.columns([2, 5])
+        with col_load_p:
+            if st.button("📥 Load Project Links into Reorder Manager", key="load_proj_bulk"):
+                raw_urls = [u.strip() for u in project_urls_textarea.split("\n") if u.strip()]
+                st.session_state.bulk_links_data = [
+                    {"Position": i + 1, "URL": u, "Title": f"Project Section #{i + 1}"}
+                    for i, u in enumerate(raw_urls)
+                ]
+
+        if st.session_state.bulk_links_data:
+            st.markdown("##### ↕️ Project Bulk Links & Custom Order Manager")
+            st.caption("Change position numbers, edit section titles inline, or reorder project items as desired:")
+            
+            edited_df = st.data_editor(
+                st.session_state.bulk_links_data,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="project_bulk_order_editor",
+                column_config={
+                    "Position": st.column_config.NumberColumn("Order #", min_value=1, step=1, format="%d"),
+                    "URL": st.column_config.TextColumn("Project Share URL"),
+                    "Title": st.column_config.TextColumn("Section Title")
+                }
+            )
+            
+            try:
+                sorted_links = sorted(edited_df, key=lambda x: int(x.get("Position", 1)))
+            except Exception:
+                sorted_links = edited_df
+
+            urls = [row["URL"] for row in sorted_links if row.get("URL", "").strip()]
+            for idx, row in enumerate(sorted_links):
+                if row.get("URL", "").strip():
+                    link_titles[idx] = row.get("Title", f"Project Section #{idx + 1}")
+
     if st.button("🔍 Fetch Chat Content Now", type="primary"):
         if not urls:
-            st.error("Please enter and load at least one valid ChatGPT share link.")
+            st.error("Please enter and load at least one valid link.")
         else:
             st.session_state.chat_sections = []
             progress_bar = st.progress(0)
@@ -857,11 +920,13 @@ with tab_input:
                 try:
                     msgs = scrape_single_chat(url, enable_ai_filter)
                     if msgs:
-                        sec_title = (
-                            link_titles.get(i, f"Conversation Section #{i+1}")
-                            if input_mode == "Bulk Links (Multiple)"
-                            else (custom_title if (show_header_title and custom_title and custom_title.strip()) else "")
-                        )
+                        if input_mode in ["Bulk Links (Multiple)", "Project Bulk Links"]:
+                            sec_title = link_titles.get(i, f"Section #{i+1}")
+                        elif input_mode in ["Project Single Link", "Entire Project Link"]:
+                            sec_title = custom_title if (show_header_title and custom_title and custom_title.strip()) else "Entire Project Export"
+                        else:
+                            sec_title = custom_title if (show_header_title and custom_title and custom_title.strip()) else ""
+
                         st.session_state.chat_sections.append((sec_title, msgs))
                 except Exception as e:
                     failed_links.append(f"{url} (Error: {e})")
@@ -873,7 +938,7 @@ with tab_input:
             if st.session_state.chat_sections:
                 st.success(
                     f"Successfully fetched {len(st.session_state.chat_sections)}"
-                    " conversation(s)! Head over to the **Live Preview** tab."
+                    " conversation/project section(s)! Head over to the **Live Preview** tab."
                 )
                 if failed_links:
                     st.warning(
@@ -882,8 +947,7 @@ with tab_input:
                     )
             else:
                 st.error(
-                    "Could not parse any conversations from the provided links. Please"
-                    " check the URLs."
+                    "Could not parse any conversations from the provided links. Please check the URLs."
                 )
 
 all_message_ids = []
@@ -919,39 +983,9 @@ with tab_preview:
     st.subheader("Live Document Preview")
     if st.session_state.chat_sections:
         st.caption(
-            "Instantly reflects your chosen theme, custom titles, and layout"
-            " configurations from the sidebar."
+            "Instantly reflects your chosen theme, custom titles, and layout configurations from the sidebar."
         )
         live_preview_html = build_html_document(
-            st.session_state.chat_sections,
-            theme,
-            layout_view_style,
-            font_style,
-            font_size,
-            line_height,
-            paragraph_spacing,
-            message_filter_role,
-            message_selection_mode,
-            selected_message_ids,
-            show_header_title,
-            custom_title,
-            header_alignment,
-            show_dividers,
-            show_timestamp,
-            footer_text,
-            chosen_accent,
-            code_theme,
-            block_radius,
-            margin_mm,
-            max_content_width,
-            enable_box_shadow,
-            generate_toc,
-            watermark_text,
-            watermark_opacity / 100.0,
-            footer_watermark_text,
-            show_page_numbers,
-            custom_css_injection,
-        ) if not include_footer_wm else build_html_document(
             st.session_state.chat_sections,
             theme,
             layout_view_style,
@@ -985,8 +1019,7 @@ with tab_preview:
             st.components.v1.html(live_preview_html, height=700, scrolling=True)
     else:
         st.info(
-            "Please enter your share links and click **Fetch Chat Content Now** in"
-            " the first tab to view the preview."
+            "Please enter your share links and click **Fetch Chat Content Now** in the first tab to view the preview."
         )
 
 with tab_download:
