@@ -259,9 +259,17 @@ def scrape_single_chat(url: str, apply_filter: bool) -> list:
                 author = message.get("author", {}).get("role")
                 if author in ["user", "assistant"]:
                     content_parts = message.get("content", {}).get("parts", [])
-                    text_content = "".join(
-                        [str(p) for p in content_parts if isinstance(p, str)]
-                    )
+                    extracted_texts = []
+                    for p in content_parts:
+                        if isinstance(p, str):
+                            extracted_texts.append(p)
+                        elif isinstance(p, dict):
+                            img_url = p.get("url") or p.get("asset_pointer") or p.get("file_url")
+                            if img_url:
+                                extracted_texts.append(f"\n\n![Image/Attachment]({img_url})\n\n")
+                            elif "text" in p:
+                                extracted_texts.append(str(p["text"]))
+                    text_content = "".join(extracted_texts)
                     text_content = re.sub(r".*?", "", text_content)
 
                     if text_content.strip():
@@ -803,9 +811,10 @@ with tab_input:
 
             st.markdown("##### ✏️ Custom Section Titles per Link")
             for idx, u in enumerate(raw_urls):
-                link_titles[u] = st.text_input(
+                link_titles[idx] = st.text_input(
                     f"Title for Link #{idx+1} ({u[:30]}...)",
                     value=f"Conversation Section #{idx+1}",
+                    key=f"bulk_title_{idx}"
                 )
         urls = raw_urls
 
@@ -824,7 +833,7 @@ with tab_input:
                     msgs = scrape_single_chat(url, enable_ai_filter)
                     if msgs:
                         sec_title = (
-                            link_titles.get(url, f"Conversation Section #{i+1}")
+                            link_titles.get(i, f"Conversation Section #{i+1}")
                             if input_mode == "Bulk Links (Multiple)"
                             else (custom_title if (show_header_title and custom_title and custom_title.strip()) else "")
                         )
