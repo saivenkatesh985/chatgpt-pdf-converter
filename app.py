@@ -12,6 +12,19 @@ from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 from playwright.sync_api import sync_playwright
 
+# Optional library imports with graceful fallbacks
+try:
+    from deep_translator import GoogleTranslator
+    HAS_TRANSLATOR = True
+except ImportError:
+    HAS_TRANSLATOR = False
+
+try:
+    from gtts import gTTS
+    HAS_GTTS = True
+except ImportError:
+    HAS_GTTS = False
+
 # --- Automatically install playwright chromium browser on cloud deployment ---
 @st.cache_resource
 def install_playwright():
@@ -26,7 +39,7 @@ install_playwright()
 
 # Page config
 st.set_page_config(
-    page_title="ChatGPT Document Studio", page_icon="⬇️", layout="wide"
+    page_title="ChatGPT Document Studio Pro", page_icon="⬇️", layout="wide"
 )
 
 # Custom UI polish
@@ -50,15 +63,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("⬇️ ChatGPT Link to Multi-Format Document Studio")
+st.title("⬇️ ChatGPT Link to Multi-Format Document Studio Pro")
 st.markdown(
-    "Transform single or multiple public ChatGPT conversations into"
-    " professionally styled Word, Markdown, PDF, or HTML documents with advanced"
-    " custom controls and robust UTF-8 math notation."
+    "Transform single or multiple public ChatGPT conversations into professionally styled documents "
+    "with robust image rendering, translation, Mermaid vector diagrams, text-to-speech, and study revision toggles."
 )
 
 # --- SIDEBAR: ORGANIZED LAYOUT STUDIO ---
-st.sidebar.header("🎨 Layout Studio")
+st.sidebar.header("🎨 Layout & Studio Controls")
 
 with st.sidebar.expander("📌 Document & Branding", expanded=True):
     theme = st.selectbox(
@@ -85,7 +97,34 @@ with st.sidebar.expander("📌 Document & Branding", expanded=True):
     include_footer_wm = st.checkbox("Include Bottom Footer Watermark", value=False)
     footer_watermark_text = st.text_input(
         "Bottom Footer Watermark Text", 
-        value="Exported by <a href='https://chatgpt-pdf-converter.streamlit.app' target='_blank' style='color: inherit; text-decoration: underline;'>ChatGPT Studio</a>"
+        value="Exported by <a href='https://chatgpt-pdf-converter.streamlit.app' target='_blank' style='color: inherit; text-decoration: underline;'>ChatGPT Studio Pro</a>"
+    )
+
+with st.sidebar.expander("🌐 Advanced Features & Toggles", expanded=True):
+    # Multi-Language Translation
+    enable_translation = st.checkbox("Enable Live Translation", value=False)
+    target_language = st.selectbox(
+        "Target Language",
+        ["Spanish", "French", "German", "Japanese", "Chinese (Simplified)", "Italian", "Portuguese", "Russian"],
+        disabled=not enable_translation
+    )
+    lang_code_map = {
+        "Spanish": "es", "French": "fr", "German": "de", "Japanese": "ja",
+        "Chinese (Simplified)": "zh-CN", "Italian": "it", "Portuguese": "pt", "Russian": "ru"
+    }
+
+    st.markdown("---")
+    # Clean On/Off Toggles for Study Revision & Custom Notes
+    enable_study_revision = st.toggle(
+        "📚 Study Notes & Flashcards Auto-Append", 
+        value=False,
+        help="Scans chat content for definitions and key tips to build a summary sheet at the end."
+    )
+    
+    enable_custom_notes = st.toggle(
+        "📝 Custom Note Injector", 
+        value=False,
+        help="Enables the manager to insert personal markdown notes between conversation turns."
     )
 
 with st.sidebar.expander("📐 Spacing & Geometry", expanded=False):
@@ -165,6 +204,9 @@ if "chat_sections" not in st.session_state:
 if "bulk_links_data" not in st.session_state:
     st.session_state.bulk_links_data = []
 
+if "injected_notes" not in st.session_state:
+    st.session_state.injected_notes = {}
+
 
 # --- HELPER FUNCTIONS ---
 def clean_assistant_text(text: str) -> str:
@@ -176,8 +218,23 @@ def clean_assistant_text(text: str) -> str:
     return pattern.sub("", text).strip()
 
 
+def translate_text(text: str, dest_lang_code: str) -> str:
+    if not HAS_TRANSLATOR or not text.strip():
+        return text
+    try:
+        translator = GoogleTranslator(source='auto', target=dest_lang_code)
+        if len(text) > 4000:
+            chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
+            translated_chunks = [translator.translate(c) for c in chunks]
+            return "".join(translated_chunks)
+        else:
+            return translator.translate(text)
+    except Exception as e:
+        print(f"Translation error: {e}")
+        return text
+
+
 def parse_math_expression_blocks(text: str) -> str:
-    """Robustly parses LaTeX tags, replaces arrows with UTF-8, and formats formulas & path blocks cleanly."""
     text = text.replace(r'\tilde{[f}', 'f').replace(r'\tilde{f}', 'f')
     text = text.replace(r'\rightarrow', ' → ').replace(r'\to', ' → ')
     text = re.sub(r'\\text\{([^}]+)\}', r'\1', text)
@@ -193,38 +250,14 @@ def parse_math_expression_blocks(text: str) -> str:
         '''
     text = re.sub(r'\[\s*\\boxed\{([^}]+)\}\s*\]', boxed_replacer, text)
     text = re.sub(r'\\boxed\{([^}]+)\}', r'\1', text)
-
-    def path_replacer(match):
-        path_expr = match.group(1).strip()
-        return f'''
-        <div style="font-family: Consolas, Monaco, monospace; background: rgba(16, 163, 127, 0.08); 
-                    border-left: 3px solid #10a37f; padding: 6px 12px; margin: 8px 0; 
-                    border-radius: 4px; font-weight: bold; font-size: 1em; display: inline-block; width: 100%;">
-            Path Sequence: {path_expr}
-        </div>
-        '''
-    text = re.sub(r'\[\s*([A-Z]\s*→\s*[A-Z](?:\s*→\s*[A-Z])+)\s*\]', path_replacer, text)
-
-    def math_replacer(match):
-        expr = match.group(1).replace(r'\quad', '&nbsp;&nbsp;&nbsp;&nbsp;').strip()
-        return f'''
-        <div style="font-family: Consolas, Monaco, monospace; background: rgba(37, 99, 235, 0.05); 
-                    border-left: 3px solid #2563eb; padding: 6px 12px; margin: 6px 0; 
-                    border-radius: 4px; font-size: 0.95em; display: inline-block; width: 100%;">
-            <code>{expr}</code>
-        </div>
-        '''
-    text = re.sub(r'\[\s*([^\[\]]+?(?:=|\+|\-|[a-zA-Z]\()[^\[\]]*?)\s*\]', math_replacer, text)
-
     return text
 
 
 def parse_custom_tags_and_flowcharts(text: str) -> str:
-    text = parse_math_expression_blocks(text)
-    return text
+    return parse_math_expression_blocks(text)
 
 
-def scrape_single_chat(url: str, apply_filter: bool) -> list:
+def scrape_single_chat(url: str, apply_filter: bool, target_lang: str = None) -> list:
     clean_url = url.split("?")[0].strip()
     if not clean_url:
         return []
@@ -263,17 +296,36 @@ def scrape_single_chat(url: str, apply_filter: bool) -> list:
             if message:
                 author = message.get("author", {}).get("role")
                 if author in ["user", "assistant"]:
-                    content_parts = message.get("content", {}).get("parts", [])
+                    content = message.get("content", {})
+                    content_parts = content.get("parts", [])
                     extracted_texts = []
+                    
+                    metadata = message.get("metadata", {})
+                    dalle_data = metadata.get("dalle", {})
+                    if dalle_data and dalle_data.get("gen_image_url"):
+                        dalle_url = dalle_data.get("gen_image_url")
+                        extracted_texts.append(f"\n\n![DALL-E Image]({dalle_url})\n\n")
+
                     for p in content_parts:
                         if isinstance(p, str):
                             extracted_texts.append(p)
                         elif isinstance(p, dict):
-                            img_url = p.get("url") or p.get("asset_pointer") or p.get("file_url")
+                            img_url = (
+                                p.get("url") 
+                                or p.get("file_url") 
+                                or p.get("download_url")
+                                or metadata.get("image_url")
+                            )
+                            asset_ptr = p.get("asset_pointer")
+                            if not img_url and asset_ptr:
+                                if asset_ptr.startswith("http://") or asset_ptr.startswith("https://"):
+                                    img_url = asset_ptr
+
                             if img_url:
                                 extracted_texts.append(f"\n\n![Image/Attachment]({img_url})\n\n")
                             elif "text" in p:
                                 extracted_texts.append(str(p["text"]))
+                                
                     text_content = "".join(extracted_texts)
                     text_content = re.sub(r".*?", "", text_content)
 
@@ -281,6 +333,9 @@ def scrape_single_chat(url: str, apply_filter: bool) -> list:
                         role_label = "User" if author == "user" else "ChatGPT"
                         if role_label == "ChatGPT" and apply_filter:
                             text_content = clean_assistant_text(text_content)
+
+                        if target_lang and HAS_TRANSLATOR:
+                            text_content = translate_text(text_content, target_lang)
 
                         if text_content.strip():
                             parsed_text = parse_custom_tags_and_flowcharts(text_content)
@@ -346,8 +401,33 @@ def get_filtered_sections(
     return filtered_sections
 
 
+def generate_study_revision_sheet(chat_sections) -> str:
+    revision_items = []
+    for _, messages in chat_sections:
+        for msg in messages:
+            if msg["role"] == "ChatGPT":
+                lines = msg["text"].split("\n")
+                for line in lines:
+                    if line.strip().startswith(("* ", "- ", "1. ", "• ")) or "define" in line.lower() or "key" in line.lower() or "important" in line.lower():
+                        if len(line.strip()) > 10 and line.strip() not in revision_items:
+                            revision_items.append(line.strip())
+
+    if not revision_items:
+        revision_items = ["No key definitions or flashcard items automatically detected. General review of conversation recommended."]
+
+    items_html = "".join([f"<li>{item}</li>" for item in revision_items[:25]])
+    return f"""
+    <div style="background: rgba(16, 163, 127, 0.05); border: 2px solid #10a37f; padding: 20px; border-radius: 8px; margin-top: 40px;">
+        <h3 style="color: #10a37f; margin-top: 0;">📚 Quick Revision Sheet & Key Takeaways</h3>
+        <p><i>Auto-generated study flashcard notes extracted from conversation payload:</i></p>
+        <ul style="margin-bottom: 0;">
+            {items_html}
+        </ul>
+    </div>
+    """
+
+
 def build_pdf_document(full_html: str, margin_val: int) -> bytes:
-    """Renders the exact live HTML preview into a PDF using headless Playwright for 100% fidelity."""
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
@@ -406,6 +486,8 @@ def build_html_document(
     footer_wm: str,
     include_page_nos: bool,
     custom_css: str,
+    include_study_sheet: bool,
+    injected_notes_dict: dict,
 ) -> str:
     active_sections = get_filtered_sections(
         chat_sections, message_filter_role, selection_mode, allowed_ids
@@ -450,7 +532,7 @@ def build_html_document(
             'Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
         ),
     }
-    chosen_font = font_map.get(font_style, font_map["Sans-serif"])
+    chosen_font = font_map.get(font_style, font_style)
 
     radius_map = {
         "Sharp (0px)": "0px",
@@ -530,7 +612,7 @@ def build_html_document(
     }}
     '''
 
-    watermark_footer_html = (
+    footer_wm_html = (
         f'''
         <div style="margin-top: 50px; padding-top: 15px; border-top: 1px solid {border_color}; font-size: 0.85em; text-align: center; color: {text_color}; opacity: 0.8;">
             {footer_wm}
@@ -546,6 +628,7 @@ def build_html_document(
     is_chat_bubbles = layout_view_style == "Modern Chat Bubbles"
 
     document_body_html = ""
+    global_msg_idx = 0
     for idx, (sec_title, messages) in enumerate(active_sections):
         section_id = f"section-{idx}"
         if sec_title and sec_title.strip():
@@ -556,6 +639,17 @@ def build_html_document(
             '''
         for msg in messages:
             role = msg["role"]
+            
+            # Inject custom note if toggle is active and note exists for this index
+            if include_study_sheet or True: # Check custom notes dict
+                if global_msg_idx in injected_notes_dict and injected_notes_dict[global_msg_idx].strip():
+                    note_content = injected_notes_dict[global_msg_idx]
+                    document_body_html += f'''
+                    <div style="background: rgba(37, 99, 235, 0.05); border-left: 3px solid #2563eb; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-style: italic;">
+                        <strong>📝 Custom Note:</strong> {note_content}
+                    </div>
+                    '''
+
             if role == "User":
                 if is_chat_bubbles:
                     document_body_html += f'''
@@ -590,6 +684,10 @@ def build_html_document(
                     </div>
                     {divider_html}
                     '''
+            global_msg_idx += 1
+
+    if include_study_sheet:
+        document_body_html += generate_study_revision_sheet(active_sections)
 
     footer_html = (
         f'''
@@ -646,7 +744,7 @@ def build_html_document(
             th, td {{ border: 1px solid {border_color}; padding: 10px 14px; text-align: left; word-wrap: break-word; }}
             th {{ background-color: {code_bg} !important; font-weight: bold; color: {text_color} !important; }}
             img {{ max-width: 100%; height: auto; border-radius: 6px; }}
-            /* Custom User CSS Injection */
+            .mermaid {{ background-color: {code_bg}; padding: 12px; border-radius: 8px; text-align: center; margin: 15px 0; }}
             {custom_css}
         </style>
     </head>
@@ -657,7 +755,7 @@ def build_html_document(
             {toc_html}
             {document_body_html}
             {footer_html}
-            {watermark_footer_html if include_footer_wm else ""}
+            {footer_wm_html if include_footer_wm else ""}
         </div>
     </body>
     </html>
@@ -780,8 +878,8 @@ def convert_chats_to_docx(
 
 
 # --- MAIN INTERFACE TABS ---
-tab_input, tab_preview, tab_download = st.tabs(
-    ["🔗 1. Input & Fetch", "👁️ 2. Live Preview", "📥 3. Download Exports"]
+tab_input, tab_custom, tab_preview, tab_download = st.tabs(
+    ["🔗 1. Input & Fetch", "📝 2. Custom Notes & Study", "👁️ 3. Live Preview", "📥 4. Download & Audio"]
 )
 
 with tab_input:
@@ -823,8 +921,6 @@ with tab_input:
 
         if st.session_state.bulk_links_data:
             st.markdown("##### ↕️ Bulk Links & Custom Order Manager")
-            st.caption("Change position numbers, edit section titles inline, or reorder items as desired:")
-            
             edited_df = st.data_editor(
                 st.session_state.bulk_links_data,
                 num_rows="dynamic",
@@ -855,11 +951,13 @@ with tab_input:
             progress_bar = st.progress(0)
             status_text = st.empty()
 
+            translation_code = lang_code_map.get(target_language, "es") if enable_translation else None
+
             failed_links = []
             for i, url in enumerate(urls):
                 status_text.text(f"Fetching link {i+1} of {len(urls)}...")
                 try:
-                    msgs = scrape_single_chat(url, enable_ai_filter)
+                    msgs = scrape_single_chat(url, enable_ai_filter, translation_code)
                     if msgs:
                         sec_title = (
                             link_titles.get(i, f"Conversation Section #{i+1}")
@@ -891,6 +989,7 @@ with tab_input:
 
 all_message_ids = []
 id_to_label_map = {}
+flat_messages_list = []
 total_word_count = 0
 if st.session_state.chat_sections:
     for _, msgs in st.session_state.chat_sections:
@@ -898,6 +997,7 @@ if st.session_state.chat_sections:
             mid = m["id"]
             all_message_ids.append(mid)
             id_to_label_map[mid] = f"[{m['role']}] {m['text'][:55]}..."
+            flat_messages_list.append(m)
             total_word_count += len(m["text"].split())
 
     st.sidebar.markdown("---")
@@ -918,11 +1018,43 @@ if message_selection_mode == "Pick Specific Messages (Custom)" and all_message_i
         format_func=lambda x: id_to_label_map.get(x, x),
     )
 
+with tab_custom:
+    st.subheader("📝 Custom Note Injector Manager")
+    if enable_custom_notes:
+        st.markdown("Insert custom personal notes between specific imported conversation turns.")
+        if st.session_state.chat_sections and flat_messages_list:
+            selected_idx_for_note = st.selectbox(
+                "Select position (insert note right before message):",
+                options=list(range(len(flat_messages_list))),
+                format_func=lambda i: f"Before [{flat_messages_list[i]['role']}] {flat_messages_list[i]['text'][:45]}..."
+            )
+            
+            note_text_input = st.text_area("Custom Note Content (Markdown supported)", placeholder="Type your personal note or comment here...")
+            
+            if st.button("➕ Inject Note at Position"):
+                st.session_state.injected_notes[selected_idx_for_note] = note_text_input
+                st.success("Note successfully added! It will appear in the live preview.")
+                
+            if st.session_state.injected_notes:
+                st.markdown("##### Current Injected Notes:")
+                for idx, ntext in list(st.session_state.injected_notes.items()):
+                    col_n1, col_n2 = st.columns([5, 1])
+                    with col_n1:
+                        st.write(f"• **Pos {idx}**: {ntext}")
+                    with col_n2:
+                        if st.button("Remove", key=f"del_note_{idx}"):
+                            del st.session_state.injected_notes[idx]
+                            st.rerun()
+        else:
+            st.info("Fetch chat content first in Tab 1 to enable note injection.")
+    else:
+        st.info("The **Custom Note Injector** toggle is currently turned OFF in the sidebar. Switch it on to use this feature.")
+
 with tab_preview:
     st.subheader("Live Document Preview")
     if st.session_state.chat_sections:
         st.caption(
-            "Instantly reflects your chosen theme, custom titles, and layout configurations from the sidebar."
+            "Instantly reflects your chosen theme, custom titles, images, Mermaid diagrams, and revision sheets."
         )
         live_preview_html = build_html_document(
             st.session_state.chat_sections,
@@ -953,6 +1085,8 @@ with tab_preview:
             footer_watermark_text,
             show_page_numbers,
             custom_css_injection,
+            enable_study_revision,
+            st.session_state.injected_notes if enable_custom_notes else {},
         )
         with st.container(border=True):
             st.components.v1.html(live_preview_html, height=700, scrolling=True)
@@ -962,96 +1096,132 @@ with tab_preview:
         )
 
 with tab_download:
-    st.subheader("Download Document File")
+    st.subheader("Download Document File & Audio Export")
     if st.session_state.chat_sections:
         output_filename = st.text_input("Output Filename", value="chatgpt_export")
 
-        if st.button("🚀 Generate & Download File Now", type="secondary"):
-            try:
-                base_filename = output_filename.strip()
-                if not base_filename:
-                    base_filename = "chat_export"
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            if st.button("🚀 Generate & Download File Now", type="primary"):
+                try:
+                    base_filename = output_filename.strip()
+                    if not base_filename:
+                        base_filename = "chat_export"
 
-                current_html = build_html_document(
-                    st.session_state.chat_sections,
-                    theme,
-                    layout_view_style,
-                    font_style,
-                    font_size,
-                    line_height,
-                    paragraph_spacing,
-                    message_filter_role,
-                    message_selection_mode,
-                    selected_message_ids,
-                    show_header_title,
-                    custom_title,
-                    header_alignment,
-                    show_dividers,
-                    show_timestamp,
-                    footer_text,
-                    chosen_accent,
-                    code_theme,
-                    block_radius,
-                    margin_mm,
-                    max_content_width,
-                    enable_box_shadow,
-                    generate_toc,
-                    watermark_text,
-                    watermark_opacity / 100.0,
-                    footer_watermark_text,
-                    show_page_numbers,
-                    custom_css_injection,
-                )
+                    current_html = build_html_document(
+                        st.session_state.chat_sections,
+                        theme,
+                        layout_view_style,
+                        font_style,
+                        font_size,
+                        line_height,
+                        paragraph_spacing,
+                        message_filter_role,
+                        message_selection_mode,
+                        selected_message_ids,
+                        show_header_title,
+                        custom_title,
+                        header_alignment,
+                        show_dividers,
+                        show_timestamp,
+                        footer_text,
+                        chosen_accent,
+                        code_theme,
+                        block_radius,
+                        margin_mm,
+                        max_content_width,
+                        enable_box_shadow,
+                        generate_toc,
+                        watermark_text,
+                        watermark_opacity / 100.0,
+                        footer_watermark_text,
+                        show_page_numbers,
+                        custom_css_injection,
+                        enable_study_revision,
+                        st.session_state.injected_notes if enable_custom_notes else {},
+                    )
 
-                if "PDF" in export_format:
-                    with st.spinner("Compiling high-fidelity PDF Document..."):
-                        file_data = build_pdf_document(current_html, margin_val=margin_mm)
-                        mime_type = "application/pdf"
-                        final_name = f"{base_filename}.pdf"
-                elif "Word" in export_format:
-                    with st.spinner("Compiling Word Document (.docx)..."):
-                        file_data = convert_chats_to_docx(
-                            st.session_state.chat_sections,
-                            custom_title,
-                            message_filter_role,
-                            message_selection_mode,
-                            selected_message_ids,
-                            show_timestamp,
-                            footer_text,
-                            show_page_numbers,
-                            footer_watermark_text,
-                            include_footer_wm,
-                        )
-                        mime_type = (
-                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        )
-                        final_name = f"{base_filename}.docx"
-                elif "Markdown" in export_format:
-                    with st.spinner("Generating Markdown file..."):
-                        md_text = convert_chats_to_markdown(
-                            st.session_state.chat_sections,
-                            custom_title,
-                            message_filter_role,
-                            message_selection_mode,
-                            selected_message_ids,
-                        )
-                        file_data = md_text.encode("utf-8")
-                        mime_type = "text/markdown"
-                        final_name = f"{base_filename}.md"
-                else:  # HTML
-                    with st.spinner("Generating HTML file..."):
-                        file_data = current_html.encode("utf-8")
-                        mime_type = "text/html"
-                        final_name = f"{base_filename}.html"
+                    if "PDF" in export_format:
+                        with st.spinner("Compiling high-fidelity PDF Document..."):
+                            file_data = build_pdf_document(current_html, margin_val=margin_mm)
+                            mime_type = "application/pdf"
+                            final_name = f"{base_filename}.pdf"
+                    elif "Word" in export_format:
+                        with st.spinner("Compiling Word Document (.docx)..."):
+                            file_data = convert_chats_to_docx(
+                                st.session_state.chat_sections,
+                                custom_title,
+                                message_filter_role,
+                                message_selection_mode,
+                                selected_message_ids,
+                                show_timestamp,
+                                footer_text,
+                                show_page_numbers,
+                                footer_watermark_text,
+                                include_footer_wm,
+                            )
+                            mime_type = (
+                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            )
+                            final_name = f"{base_filename}.docx"
+                    elif "Markdown" in export_format:
+                        with st.spinner("Generating Markdown file..."):
+                            md_text = convert_chats_to_markdown(
+                                st.session_state.chat_sections,
+                                custom_title,
+                                message_filter_role,
+                                message_selection_mode,
+                                selected_message_ids,
+                            )
+                            file_data = md_text.encode("utf-8")
+                            mime_type = "text/markdown"
+                            final_name = f"{base_filename}.md"
+                    else:  # HTML
+                        with st.spinner("Generating HTML file..."):
+                            file_data = current_html.encode("utf-8")
+                            mime_type = "text/html"
+                            final_name = f"{base_filename}.html"
 
-                st.success("Document built successfully! Click below to save:")
-                st.download_button(
-                    label=f"💾 Click Here to Save {final_name}",
-                    data=file_data,
-                    file_name=final_name,
-                    mime=mime_type,
-                )
-            except Exception as e:
-                st.error(f"An error occurred during file creation: {e}")
+                    st.success("Document built successfully! Click below to save:")
+                    st.download_button(
+                        label=f"💾 Click Here to Save {final_name}",
+                        data=file_data,
+                        file_name=final_name,
+                        mime=mime_type,
+                    )
+                except Exception as e:
+                    st.error(f"An error occurred during file creation: {e}")
+
+        with col_d2:
+            if HAS_GTTS:
+                st.markdown("##### 🎧 Text-to-Speech Audio Summary (.mp3)")
+                if st.button("🔊 Generate Audio Podcast Summary"):
+                    with st.spinner("Synthesizing audio file using TTS..."):
+                        try:
+                            summary_corpus = f"Audio summary for document: {custom_title}. "
+                            for _, msgs in st.session_state.chat_sections:
+                                for m in msgs:
+                                    if m["role"] == "ChatGPT":
+                                        summary_corpus += m["text"][:300] + ". "
+
+                            tts = gTTS(text=summary_corpus[:3500], lang='en', slow=False)
+                            audio_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+                            tts.save(audio_tmp.name)
+                            
+                            with open(audio_tmp.name, "rb") as af:
+                                audio_bytes = af.read()
+                            os.remove(audio_tmp.name)
+
+                            st.audio(audio_bytes, format="audio/mp3")
+                            st.download_button(
+                                label="📥 Download Audio (.mp3)",
+                                data=audio_bytes,
+                                file_name=f"{output_filename}_summary.mp3",
+                                mime="audio/mp3"
+                            )
+                        except Exception as tts_err:
+                            st.error(f"TTS generation failed: {tts_err}")
+            else:
+                st.info("Install `gTTS` library to enable MP3 audio exports.")
     else:
         st.info("Fetch your chats first before downloading.")
