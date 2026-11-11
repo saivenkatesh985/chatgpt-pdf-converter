@@ -463,9 +463,10 @@ def build_html_document(
         "box-shadow: 0 4px 12px rgba(0,0,0,0.06);" if shadow_enabled else ""
     )
     
-    # Use UTC time or adjust with local offset if needed (e.g., datetime.datetime.utcnow())
+    # Automatic IST Time Calculation (UTC + 5:30)
+    ist_time = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
     timestamp_str = (
-        datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        ist_time.strftime("%Y-%m-%d %H:%M IST")
         if show_timestamp
         else ""
     )
@@ -728,9 +729,10 @@ def convert_chats_to_docx(
         title_p.paragraph_format.space_after = Pt(12)
 
     if show_timestamp:
+        ist_time_docx = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
         ts_p = doc.add_paragraph()
         ts_run = ts_p.add_run(
-            f"Exported on: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+            f"Exported on: {ist_time_docx.strftime('%Y-%m-%d %H:%M IST')}"
         )
         ts_run.font.size = Pt(10)
         ts_run.font.color.rgb = RGBColor(120, 120, 120)
