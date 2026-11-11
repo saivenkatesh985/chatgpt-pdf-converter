@@ -229,7 +229,6 @@ def scrape_single_chat(url: str, apply_filter: bool) -> list:
     if not clean_url:
         return []
 
-    # Supports both standard shares and Custom GPT share links ending with /shared/c/...
     parts = clean_url.rstrip("/").split("/")
     share_id = parts[-1]
 
@@ -414,8 +413,8 @@ def build_html_document(
 
     if theme == "Black (OLED)":
         bg_color, text_color = "#000000", "#f3f4f6"
-        user_bg, user_text = "#18181b", "#a1a1aa"
-        border_color, code_bg, code_color = "#27272a", "#09090b", "#e4e4e7"
+        user_bg, user_text = "#121212", "#e4e4e7"
+        border_color, code_bg, code_color = "#27272a", "#121212", "#f3f4f6"
     elif theme == "Notes":
         bg_color, text_color = "#fbf0d9", "#2c221e"
         user_bg, user_text = "#e6f2ed", "#1b4d3e"
