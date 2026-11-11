@@ -11,7 +11,6 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 from playwright.sync_api import sync_playwright
-from collections import Counter
 
 # Optional library imports with graceful fallbacks
 try:
@@ -25,12 +24,6 @@ try:
     HAS_GTTS = True
 except ImportError:
     HAS_GTTS = False
-
-try:
-    from pypdf import PdfReader, PdfWriter
-    HAS_PYPDF = True
-except ImportError:
-    HAS_PYPDF = False
 
 # --- Automatically install playwright chromium browser on cloud deployment ---
 @st.cache_resource
@@ -46,89 +39,48 @@ install_playwright()
 
 # Page config
 st.set_page_config(
-    page_title="ChatGPT Document Studio Pro", page_icon="✨", layout="wide"
+    page_title="ChatGPT Document Studio Pro", page_icon="⬇️", layout="wide"
 )
 
-# --- PROFESSIONAL UI & DESIGN SYSTEM CSS ---
+# Custom UI polish
 st.markdown(
     """
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
-        html, body, [class*="css"] {
-            font-family: 'Inter', sans-serif !important;
-        }
-
-        .studio-header {
-            background: linear-gradient(135deg, #10a37f 0%, #0d8363 100%);
-            padding: 2rem;
-            border-radius: 12px;
-            color: white;
-            margin-bottom: 2rem;
-            box-shadow: 0 4px 20px rgba(16, 163, 127, 0.15);
-        }
-        .studio-header h1 {
-            color: white !important;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-        .studio-header p {
-            opacity: 0.9;
-            font-size: 1.05rem;
-            margin-bottom: 0;
-        }
-
         .stButton>button {
             border-radius: 8px;
             font-weight: 600;
-            padding: 0.5rem 1rem;
-            border: 1px solid rgba(0,0,0,0.08);
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.2s ease-in-out;
         }
         .stButton>button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
-
-        div[data-testid="stVerticalBlock"] > div[style*="border"] {
-            border-radius: 12px;
-            border: 1px solid #e5e7eb;
-            background: #ffffff;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-        }
-
-        section[data-testid="stSidebar"] {
-            background-color: #f8fafc;
-            border-right: 1px solid #e2e8f0;
+        .block-container {
+            padding-top: 2rem;
         }
     </style>
-    """,
+""",
     unsafe_allow_html=True,
 )
 
+st.title("⬇️ ChatGPT Link to Multi-Format Document Studio Pro")
 st.markdown(
-    """
-    <div class="studio-header">
-        <h1>✨ ChatGPT Document Studio Pro</h1>
-        <p>Transform conversation links into publication-ready documents featuring AI keyword metadata, password protection, QR verification, and interactive theme-switching.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
+    "Transform single or multiple public ChatGPT conversations into professionally styled documents "
+    "with robust image rendering, translation, Mermaid vector diagrams, text-to-speech, and study revision toggles."
 )
 
-# --- SIDEBAR: ORGANIZED PROFESSIONAL STUDIO ---
-st.sidebar.markdown("### 🎨 Design & Advanced Studio")
+# --- SIDEBAR: ORGANIZED LAYOUT STUDIO ---
+st.sidebar.header("🎨 Layout & Studio Controls")
 
-with st.sidebar.expander("📌 Document Branding & Layout", expanded=True):
+with st.sidebar.expander("📌 Document & Branding", expanded=True):
     theme = st.selectbox(
-        "Default Color Theme",
-        ["White", "Black OLED", "Notes", "Study", "Conversation"],
+        "Color Theme",
+        ["White", "Black (OLED)", "Notes", "Study", "Conversation"],
     )
     layout_view_style = st.selectbox(
         "Layout Presentation",
         ["Professional Document / Essay", "Modern Chat Bubbles"],
     )
-    enable_two_column = st.checkbox("📰 Dual-Column Journal Layout", value=False)
     font_style = st.selectbox("Font Style", ["Sans-serif", "Serif", "Monospace"])
     custom_title = st.text_input(
         "Document Title Text", value="ChatGPT Conversation Export"
@@ -141,17 +93,15 @@ with st.sidebar.expander("📌 Document Branding & Layout", expanded=True):
     watermark_opacity = st.slider(
         "Watermark Opacity (%)", min_value=1, max_value=15, value=4, step=1
     )
-
-with st.sidebar.expander("🔒 Advanced Security & Metadata", expanded=False):
-    enable_keyword_tags = st.checkbox("🏷️ Auto-Generate AI Keyword Metadata", value=True)
-    enable_qr_code = st.checkbox("📱 Include Verification QR Code in Footer", value=True)
-    qr_code_target_url = st.text_input("QR Code Target URL", value="https://chatgpt.com")
     
-    st.markdown("---")
-    enable_pdf_encryption = st.checkbox("🔑 Password Protect PDF Export", value=False)
-    pdf_password = st.text_input("PDF Encryption Password", type="password", disabled=not enable_pdf_encryption)
+    include_footer_wm = st.checkbox("Include Bottom Footer Watermark", value=False)
+    footer_watermark_text = st.text_input(
+        "Bottom Footer Watermark Text", 
+        value="Exported by <a href='https://chatgpt-pdf-converter.streamlit.app' target='_blank' style='color: inherit; text-decoration: underline;'>ChatGPT Studio Pro</a>"
+    )
 
-with st.sidebar.expander("🌐 Advanced Features & Toggles", expanded=False):
+with st.sidebar.expander("🌐 Advanced Features & Toggles", expanded=True):
+    # Multi-Language Translation
     enable_translation = st.checkbox("Enable Live Translation", value=False)
     target_language = st.selectbox(
         "Target Language",
@@ -164,6 +114,7 @@ with st.sidebar.expander("🌐 Advanced Features & Toggles", expanded=False):
     }
 
     st.markdown("---")
+    # Clean On/Off Toggles for Study Revision & Custom Notes
     enable_study_revision = st.toggle(
         "📚 Study Notes & Flashcards Auto-Append", 
         value=False,
@@ -189,6 +140,31 @@ with st.sidebar.expander("📐 Spacing & Geometry", expanded=False):
     )
     paragraph_spacing = st.slider(
         "Paragraph Spacing (px)", min_value=4, max_value=24, value=12, step=2
+    )
+
+with st.sidebar.expander("✨ Styling, Code & Accents", expanded=False):
+    accent_color_map = {
+        "Modern Green (#10a37f)": "#10a37f",
+        "Executive Blue (#2563eb)": "#2563eb",
+        "Royal Purple (#7c3aed)": "#7c3aed",
+        "Sunset Orange (#ea580c)": "#ea580c",
+    }
+    chosen_accent_label = st.selectbox(
+        "Accent & Border Color", list(accent_color_map.keys())
+    )
+    chosen_accent = accent_color_map[chosen_accent_label]
+    code_theme = st.selectbox(
+        "Code Block Theme",
+        ["GitHub", "Atom One Dark", "Monokai Sublime", "VS Code Dark"],
+    )
+    block_radius = st.selectbox(
+        "Message Box Corners", ["Sharp (0px)", "Rounded (6px)", "Pill (12px)"]
+    )
+    enable_box_shadow = st.checkbox("Add Subtle Shadow to Boxes", value=True)
+    custom_css_injection = st.text_area(
+        "Custom CSS Injector (Optional)",
+        placeholder="e.g., body { filter: contrast(110%); }",
+        height=70,
     )
 
 with st.sidebar.expander("⚙️ Structure & Filters", expanded=False):
@@ -279,22 +255,6 @@ def parse_math_expression_blocks(text: str) -> str:
 
 def parse_custom_tags_and_flowcharts(text: str) -> str:
     return parse_math_expression_blocks(text)
-
-
-def extract_keywords(chat_sections) -> list:
-    stopwords = {"the", "and", "to", "a", "of", "in", "for", "is", "on", "that", "by", "this", "with", "i", "you", "it", "not", "or", "be", "are", "from", "at", "as", "your", "all", "have", "new", "more", "an", "was", "we", "will", "my", "so", "if", "can"}
-    words = []
-    for _, msgs in chat_sections:
-        for m in msgs:
-            clean_w = re.findall(r'\b[A-Za-z]{4,}\b', m["text"])
-            for w in clean_w:
-                w_lower = w.lower()
-                if w_lower not in stopwords:
-                    words.append(w_lower)
-    
-    counts = Counter(words)
-    top_common = [word.capitalize() for word, _ in counts.most_common(5)]
-    return top_common if top_common else ["AI", "Document", "Summary", "ChatGPT", "Studio"]
 
 
 def scrape_single_chat(url: str, apply_filter: bool, target_lang: str = None) -> list:
@@ -453,7 +413,7 @@ def generate_study_revision_sheet(chat_sections) -> str:
                             revision_items.append(line.strip())
 
     if not revision_items:
-        revision_items = ["No key definitions or flashcard items automatically detected. General review recommended."]
+        revision_items = ["No key definitions or flashcard items automatically detected. General review of conversation recommended."]
 
     items_html = "".join([f"<li>{item}</li>" for item in revision_items[:25]])
     return f"""
@@ -467,7 +427,7 @@ def generate_study_revision_sheet(chat_sections) -> str:
     """
 
 
-def build_pdf_document(full_html: str, margin_val: int, encrypt_pdf: bool, pwd: str) -> bytes:
+def build_pdf_document(full_html: str, margin_val: int) -> bytes:
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
@@ -490,29 +450,10 @@ def build_pdf_document(full_html: str, margin_val: int, encrypt_pdf: bool, pwd: 
         page.pdf(path=temp_path, format="Letter", margin=pdf_margins, print_background=True)
         browser.close()
 
-    final_pdf_path = temp_path
-    if encrypt_pdf and pwd and HAS_PYPDF:
-        try:
-            reader = PdfReader(temp_path)
-            writer = PdfWriter()
-            writer.append_pages_from_reader(reader)
-            writer.encrypt(user_password=pwd, owner_password=pwd)
-            
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as enc_tmp:
-                encrypted_path = enc_tmp.name
-            
-            with open(encrypted_path, "wb") as f_out:
-                writer.write(f_out)
-            
-            os.remove(temp_path)
-            final_pdf_path = encrypted_path
-        except Exception as enc_err:
-            print(f"PDF Encryption failed: {enc_err}")
-
-    with open(final_pdf_path, "rb") as f:
+    with open(temp_path, "rb") as f:
         pdf_bytes = f.read()
-    if os.path.exists(final_pdf_path):
-        os.remove(final_pdf_path)
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
     return pdf_bytes
 
 
@@ -533,65 +474,157 @@ def build_html_document(
     show_dividers: bool,
     show_timestamp: bool,
     footer_text: str,
+    chosen_accent: str,
+    code_theme_name: str,
+    block_radius: str,
     margin_val: int,
     max_width: int,
+    shadow_enabled: bool,
     include_toc: bool,
     watermark: str,
     watermark_alpha: float,
+    footer_wm: str,
     include_page_nos: bool,
+    custom_css: str,
     include_study_sheet: bool,
     injected_notes_dict: dict,
-    enable_two_col: bool,
-    enable_tags: bool,
-    include_qr: bool,
-    qr_url: str,
 ) -> str:
     active_sections = get_filtered_sections(
         chat_sections, message_filter_role, selection_mode, allowed_ids
     )
 
+    if theme == "Black (OLED)":
+        bg_color, text_color = "#000000", "#f3f4f6"
+        user_bg, user_text = "#121212", "#e4e4e7"
+        border_color, code_bg, code_color = "#27272a", "#121212", "#f3f4f6"
+    elif theme == "Notes":
+        bg_color, text_color = "#fbf0d9", "#2c221e"
+        user_bg, user_text = "#e6f2ed", "#1b4d3e"
+        border_color, code_bg, code_color = "#e6d7bc", "#f4e7ce", "#2c221e"
+    elif theme == "Study":
+        bg_color, text_color = "#f0f4f8", "#102a43"
+        user_bg, user_text = "#d9e2ec", "#243b53"
+        border_color, code_bg, code_color = "#bcccdc", "#e2e8f0", "#102a43"
+    elif theme == "Conversation":
+        bg_color, text_color = "#f7f7f8", "#202123"
+        user_bg, user_text = "#eef8f6", "#0f5132"
+        border_color, code_bg, code_color = "#e5e5e6", "#ffffff", "#202123"
+    else:  # White
+        bg_color, text_color = "#ffffff", "#1a1a1a"
+        user_bg, user_text = "#edf7f0", "#114f2e"
+        border_color, code_bg, code_color = "#e1e4e8", "#f6f8fa", "#24292e"
+
+    code_theme_map = {
+        "GitHub": "github",
+        "Atom One Dark": "atom-one-dark",
+        "Monokai Sublime": "monokai-sublime",
+        "VS Code Dark": "vs2015",
+    }
+    highlight_theme = code_theme_map.get(code_theme_name, "github")
+
     font_map = {
-        "Sans-serif": '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        "Sans-serif": (
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,'
+            " Arial, sans-serif"
+        ),
         "Serif": 'Georgia, Cambria, "Times New Roman", Times, serif',
-        "Monospace": 'Menlo, Monaco, Consolas, "Courier New", monospace',
+        "Monospace": (
+            'Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+        ),
     }
     chosen_font = font_map.get(font_style, font_style)
+
+    radius_map = {
+        "Sharp (0px)": "0px",
+        "Rounded (6px)": "6px",
+        "Pill (12px)": "12px",
+    }
+    chosen_radius = radius_map.get(block_radius, "6px")
     chosen_padding = f"{margin_val}mm"
-
+    box_shadow_css = (
+        "box-shadow: 0 4px 12px rgba(0,0,0,0.06);" if shadow_enabled else ""
+    )
+    
     ist_time = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
-    timestamp_str = ist_time.strftime("%Y-%m-%d %H:%M IST") if show_timestamp else ""
-    timestamp_html = f'<div style="font-size: 0.55em; font-weight: normal; opacity: 0.7; margin-top: 4px;">Exported on: {timestamp_str}</div>' if show_timestamp else ""
+    timestamp_str = (
+        ist_time.strftime("%Y-%m-%d %H:%M IST")
+        if show_timestamp
+        else ""
+    )
 
-    header_html = f'''
-    <div style="font-size: 1.4em; font-weight: bold; text-align: {header_alignment.lower()}; border-bottom: 2px solid #10a37f; padding-bottom: 10px; margin-bottom: 16px;">
+    timestamp_html = (
+        f'<div style="font-size: 0.55em; font-weight: normal; opacity: 0.7;'
+        f' margin-top: 4px;">Exported on: {timestamp_str}</div>'
+        if show_timestamp
+        else ""
+    )
+
+    header_html = (
+        f'''
+    <div style="font-size: 1.4em; font-weight: bold; text-align: {header_alignment.lower()}; border-bottom: 2px solid {chosen_accent}; padding-bottom: 10px; margin-bottom: 24px; color: {text_color} !important;">
         {custom_title}
         {timestamp_html}
     </div>
-    ''' if show_header_title else ""
-
-    tags_html = ""
-    if enable_tags and active_sections:
-        keywords = extract_keywords(active_sections)
-        pills = "".join([f'<span style="background: rgba(16,163,127,0.1); color: #10a37f; padding: 4px 10px; border-radius: 12px; font-size: 0.75em; font-weight: 600; margin-right: 6px;">#{kw}</span>' for kw in keywords])
-        tags_html = f'<div style="margin-bottom: 24px; display: flex; flex-wrap: wrap; gap: 4px;">{pills}</div>'
+    '''
+        if show_header_title
+        else ""
+    )
 
     toc_html = ""
     if include_toc and len(active_sections) > 1:
-        toc_items = "".join([f'<li><a href="#section-{idx}" style="color: #10a37f; text-decoration: none;">{sec_title}</a></li>' for idx, (sec_title, _) in enumerate(active_sections)])
+        toc_items = "".join([
+            f'<li><a href="#section-{idx}" style="color: {chosen_accent};'
+            f' text-decoration: none;">{sec_title}</a></li>'
+            for idx, (sec_title, _) in enumerate(active_sections)
+        ])
         toc_html = f'''
-        <div class="theme-box" style="border: 1px solid rgba(0,0,0,0.1); padding: 16px 20px; border-radius: 8px; margin-bottom: 30px;">
+        <div style="background-color: {code_bg}; border: 1px solid {border_color}; padding: 16px 20px; border-radius: 8px; margin-bottom: 30px;">
             <div style="font-weight: bold; margin-bottom: 8px; font-size: 1.1em;">📑 Table of Contents</div>
-            <ul style="margin: 0; padding-left: 20px;">{toc_items}</ul>
+            <ul style="margin: 0; padding-left: 20px;">
+                {toc_items}
+            </ul>
         </div>
         '''
 
-    watermark_html = f'''
-    <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 5rem; font-weight: bold; opacity: {watermark_alpha}; pointer-events: none; z-index: 9999; white-space: nowrap;">
-        {watermark}
-    </div>
-    ''' if watermark else ""
+    watermark_html = (
+        f'''
+    <div style="position: fixed; top: 50%; left: 50%; transform:'''
+        " translate(-50%, -50%) rotate(-30deg); font-size: 5rem; font-weight:"
+        f" bold; color: {text_color}; opacity: {watermark_alpha};"
+        ' pointer-events: none; z-index: 9999; white-space: nowrap;">'
+        f" {watermark}"
+        " </div>"
+    ) if watermark else ""
 
-    divider_html = '<hr style="border: none; border-top: 1px solid rgba(0,0,0,0.1); margin: 24px 0;" />' if show_dividers else ""
+    page_bottom_right_content = (
+        '"Page " counter(page) " of " counter(pages)'
+        if include_page_nos
+        else '""'
+    )
+
+    page_num_css = f'''
+    @page {{
+        @bottom-right {{
+            content: {page_bottom_right_content};
+            font-size: 8pt;
+            color: #888888;
+        }}
+    }}
+    '''
+
+    footer_wm_html = (
+        f'''
+        <div style="margin-top: 50px; padding-top: 15px; border-top: 1px solid {border_color}; font-size: 0.85em; text-align: center; color: {text_color}; opacity: 0.8;">
+            {footer_wm}
+        </div>
+        '''
+    ) if footer_wm else ""
+
+    divider_html = (
+        f'''<hr style="border: none; border-top: 1px solid {border_color};'''
+        ' margin: 24px 0;" />'
+    ) if show_dividers else ""
+
     is_chat_bubbles = layout_view_style == "Modern Chat Bubbles"
 
     document_body_html = ""
@@ -600,34 +633,37 @@ def build_html_document(
         section_id = f"section-{idx}"
         if sec_title and sec_title.strip():
             document_body_html += f'''
-            <div id="{section_id}" style="font-size: 1.2em; font-weight: bold; color: #10a37f; margin-top: 40px; margin-bottom: 20px; border-bottom: 1px dashed rgba(0,0,0,0.1); padding-bottom: 8px;">
+            <div id="{section_id}" style="font-size: 1.2em; font-weight: bold; color: {chosen_accent}; margin-top: 40px; margin-bottom: 20px; border-bottom: 1px dashed {border_color}; padding-bottom: 8px;">
                 {sec_title}
             </div>
             '''
         for msg in messages:
             role = msg["role"]
-            if global_msg_idx in injected_notes_dict and injected_notes_dict[global_msg_idx].strip():
-                note_content = injected_notes_dict[global_msg_idx]
-                document_body_html += f'''
-                <div style="background: rgba(37, 99, 235, 0.05); border-left: 4px solid #2563eb; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-style: italic;">
-                    <strong>📝 Custom Note:</strong> {note_content}
-                </div>
-                '''
+            
+            # Inject custom note if toggle is active and note exists for this index
+            if include_study_sheet or True: # Check custom notes dict
+                if global_msg_idx in injected_notes_dict and injected_notes_dict[global_msg_idx].strip():
+                    note_content = injected_notes_dict[global_msg_idx]
+                    document_body_html += f'''
+                    <div style="background: rgba(37, 99, 235, 0.05); border-left: 3px solid #2563eb; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-style: italic;">
+                        <strong>📝 Custom Note:</strong> {note_content}
+                    </div>
+                    '''
 
             if role == "User":
                 if is_chat_bubbles:
                     document_body_html += f'''
                     <div style="display: flex; justify-content: flex-end; margin: 16px 0;">
-                        <div class="user-bubble" style="padding: 14px 18px; max-width: 85%; border-radius: 12px 12px 0 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">
+                        <div style="background-color: {user_bg} !important; border: 1px solid {border_color}; padding: 14px 18px; max-width: 85%; border-radius: {chosen_radius} {chosen_radius} 0 {chosen_radius}; color: {user_text} !important; {box_shadow_css}">
                             <div style="font-size: 0.75em; font-weight: bold; margin-bottom: 4px; opacity: 0.8;">You</div>
-                            <div style="font-size: {font_size};">{msg["html"]}</div>
+                            <div style="font-size: {font_size}; color: {user_text} !important;">{msg["html"]}</div>
                         </div>
                     </div>
                     '''
                 else:
                     document_body_html += f'''
-                    <div class="user-card" style="border-left: 4px solid #10a37f; padding: 14px 18px; margin: 20px 0; border-radius: 0 8px 8px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">
-                        <div style="font-size: {font_size};">{msg["html"]}</div>
+                    <div style="background-color: {user_bg} !important; border-left: 4px solid {chosen_accent}; padding: 14px 18px; margin: 20px 0; border-radius: 0 {chosen_radius} {chosen_radius} 0; color: {user_text} !important; {box_shadow_css}">
+                        <div style="font-size: {font_size}; color: {user_text} !important;">{msg["html"]}</div>
                     </div>
                     {divider_html}
                     '''
@@ -635,15 +671,15 @@ def build_html_document(
                 if is_chat_bubbles:
                     document_body_html += f'''
                     <div style="display: flex; justify-content: flex-start; margin: 16px 0;">
-                        <div class="ai-bubble" style="padding: 14px 18px; max-width: 85%; border-radius: 12px 12px 12px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">
-                            <div style="font-size: 0.75em; font-weight: bold; margin-bottom: 4px; color: #10a37f;">ChatGPT</div>
-                            <div style="font-size: {font_size};">{msg["html"]}</div>
+                        <div style="background-color: {code_bg} !important; border: 1px solid {border_color}; padding: 14px 18px; max-width: 85%; border-radius: {chosen_radius} {chosen_radius} {chosen_radius} 0; color: {text_color} !important; {box_shadow_css}">
+                            <div style="font-size: 0.75em; font-weight: bold; margin-bottom: 4px; color: {chosen_accent};">ChatGPT</div>
+                            <div style="font-size: {font_size}; color: {text_color} !important;">{msg["html"]}</div>
                         </div>
                     </div>
                     '''
                 else:
                     document_body_html += f'''
-                    <div style="margin: 20px 0; font-size: {font_size};">
+                    <div style="margin: 20px 0; color: {text_color} !important; font-size: {font_size};">
                         {msg["html"]}
                     </div>
                     {divider_html}
@@ -653,73 +689,33 @@ def build_html_document(
     if include_study_sheet:
         document_body_html += generate_study_revision_sheet(active_sections)
 
-    footer_html = f'<div style="margin-top: 40px; padding-top: 15px; border-top: 1px dashed rgba(0,0,0,0.1); font-size: 0.85em; text-align: center; opacity: 0.8;">{footer_text}</div>' if footer_text else ""
-    
-    qr_code_html = ""
-    if include_qr:
-        qr_code_html = f'''
-        <div style="margin-top: 30px; text-align: center;">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=85x85&data={qr_url}" alt="Verification QR Code" style="border-radius: 4px;" />
-            <div style="font-size: 0.7em; opacity: 0.6; margin-top: 4px;">Scan to Verify Source</div>
-        </div>
-        '''
-
-    two_column_css = """
-    .page-wrapper {
-        column-count: 2;
-        column-gap: 30px;
-    }
-    h1, h2, .theme-box, .ai-bubble, .user-card {
-        column-span: all;
-    }
-    """ if enable_two_col else ""
-
-    theme_class_default = theme.lower().replace(" ", "-")
+    footer_html = (
+        f'''
+    <div style="margin-top: 40px; padding-top: 15px; border-top: 1px dashed'''
+        f" {border_color}; font-size: 0.85em; text-align: center; color:"
+        f' {text_color}; opacity: 0.8;">'
+        f" {footer_text}"
+        " </div>"
+    ) if footer_text else ""
 
     full_html = f'''
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/{highlight_theme}.min.css">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
         <script>
+            hljs.highlightAll();
             mermaid.initialize({{ startOnLoad: true, theme: 'default' }});
-            function setTheme(mode) {{
-                document.body.className = mode;
-                localStorage.setItem('studio_theme', mode);
-            }}
-            window.addEventListener('DOMContentLoaded', () => {{
-                const saved = localStorage.getItem('studio_theme') || '{theme_class_default}';
-                setTheme(saved);
-                const sel = document.getElementById('theme-switcher-select');
-                if(sel) sel.value = saved;
-            }});
         </script>
         <style>
             * {{ box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
-            
-            /* Themes */
-            body.white {{ background-color: #ffffff; color: #1a1a1a; }}
-            body.white .theme-box, body.white .ai-bubble {{ background-color: #f6f8fa; border: 1px solid #e1e4e8; }}
-            body.white .user-bubble, body.white .user-card {{ background-color: #edf7f0; color: #114f2e; }}
-
-            body.black-oled {{ background-color: #000000; color: #f3f4f6; }}
-            body.black-oled .theme-box, body.black-oled .ai-bubble {{ background-color: #121212; border: 1px solid #27272a; color: #f3f4f6; }}
-            body.black-oled .user-bubble, body.black-oled .user-card {{ background-color: #1a1a1a; color: #e4e4e7; border: 1px solid #27272a; }}
-
-            body.notes {{ background-color: #fbf0d9; color: #2c221e; }}
-            body.notes .theme-box, body.notes .ai-bubble {{ background-color: #f4e7ce; border: 1px solid #e6d7bc; }}
-            body.notes .user-bubble, body.notes .user-card {{ background-color: #e6f2ed; color: #1b4d3e; }}
-
-            body.study {{ background-color: #f0f4f8; color: #102a43; }}
-            body.study .theme-box, body.study .ai-bubble {{ background-color: #e2e8f0; border: 1px solid #bcccdc; }}
-            body.study .user-bubble, body.study .user-card {{ background-color: #d9e2ec; color: #243b53; }}
-
-            body.conversation {{ background-color: #f7f7f8; color: #202123; }}
-            body.conversation .theme-box, body.conversation .ai-bubble {{ background-color: #ffffff; border: 1px solid #e5e5e6; }}
-            body.conversation .user-bubble, body.conversation .user-card {{ background-color: #eef8f6; color: #0f5132; }}
-
-            body {{
+            {page_num_css}
+            html, body {{
+                background-color: {bg_color} !important;
+                color: {text_color} !important;
                 font-family: {chosen_font};
                 font-size: {font_size};
                 line-height: {line_height};
@@ -734,65 +730,32 @@ def build_html_document(
                 word-wrap: break-word;
                 overflow-wrap: break-word;
             }}
+            body *, p, span, h1, h2, h3, h4, h5, h6, li, td, th, strong, b, em, div {{
+                color: {text_color} !important;
+                font-family: {chosen_font} !important;
+            }}
             h1, h2, h3, h4 {{ font-weight: bold; margin-top: 24px; margin-bottom: 12px; }}
             p {{ margin-top: 0; margin-bottom: {paragraph_spacing}px; }}
             ul, ol {{ padding-left: 20px; margin-top: 5px; margin-bottom: 15px; }}
             li {{ margin-bottom: 6px; }}
-            pre, pre code {{ background-color: rgba(0,0,0,0.05); padding: 14px; border-radius: 6px; white-space: pre-wrap; font-family: Consolas, Monaco, monospace; }}
-            code {{ font-family: Consolas, Monaco, monospace; padding: 2px 4px; border-radius: 4px; }}
-            table {{ border-collapse: collapse; width: 100%; margin-top: 15px; margin-bottom: 20px; }}
-            th, td {{ border: 1px solid rgba(0,0,0,0.1); padding: 10px 14px; text-align: left; }}
-            th {{ font-weight: bold; }}
+            pre, pre code {{ background-color: {code_bg} !important; color: {code_color} !important; padding: 14px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; font-family: Consolas, Monaco, monospace; border: 1px solid {border_color}; }}
+            code {{ font-family: Consolas, Monaco, monospace; padding: 2px 4px; border-radius: 4px; color: {code_color} !important; background-color: {code_bg} !important; }}
+            table {{ border-collapse: collapse; width: 100%; margin-top: 15px; margin-bottom: 20px; table-layout: fixed; }}
+            th, td {{ border: 1px solid {border_color}; padding: 10px 14px; text-align: left; word-wrap: break-word; }}
+            th {{ background-color: {code_bg} !important; font-weight: bold; color: {text_color} !important; }}
             img {{ max-width: 100%; height: auto; border-radius: 6px; }}
-            .mermaid {{ background-color: rgba(0,0,0,0.03); padding: 12px; border-radius: 8px; text-align: center; margin: 15px 0; }}
-
-            /* Interactive Floating Theme Switcher Bar */
-            .theme-switcher-bar {{
-                position: fixed;
-                bottom: 20px;
-                right: 20px;
-                background: rgba(0, 0, 0, 0.85);
-                color: #fff;
-                padding: 8px 14px;
-                border-radius: 20px;
-                font-size: 0.85rem;
-                z-index: 10000;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }}
-            .theme-switcher-bar select {{
-                background: #222;
-                color: #fff;
-                border: 1px solid #444;
-                border-radius: 4px;
-                padding: 2px 6px;
-                outline: none;
-                cursor: pointer;
-            }}
-            {two_column_css}
+            .mermaid {{ background-color: {code_bg}; padding: 12px; border-radius: 8px; text-align: center; margin: 15px 0; }}
+            {custom_css}
         </style>
     </head>
-    <body class="{theme_class_default}">
+    <body>
         {watermark_html}
         <div class="page-wrapper">
             {header_html}
-            {tags_html}
             {toc_html}
             {document_body_html}
             {footer_html}
-            {qr_code_html}
-        </div>
-        <div class="theme-switcher-bar">
-            <span>🎨 Theme:</span>
-            <select id="theme-switcher-select" onchange="setTheme(this.value)">
-                <option value="white">White</option>
-                <option value="black-oled">Black OLED</option>
-                <option value="notes">Notes</option>
-                <option value="study">Study</option>
-                <option value="conversation">Conversation</option>
-            </select>
+            {footer_wm_html if include_footer_wm else ""}
         </div>
     </body>
     </html>
@@ -800,8 +763,16 @@ def build_html_document(
     return full_html
 
 
-def convert_chats_to_markdown(chat_sections, custom_title, message_filter_role, selection_mode, allowed_ids) -> str:
-    active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids)
+def convert_chats_to_markdown(
+    chat_sections: list,
+    custom_title: str,
+    message_filter_role: str,
+    selection_mode: str,
+    allowed_ids: list,
+) -> str:
+    active_sections = get_filtered_sections(
+        chat_sections, message_filter_role, selection_mode, allowed_ids
+    )
     md_content = f"# {custom_title}\n\n"
     for sec_title, messages in active_sections:
         if sec_title:
@@ -811,9 +782,41 @@ def convert_chats_to_markdown(chat_sections, custom_title, message_filter_role, 
     return md_content
 
 
-def convert_chats_to_docx(chat_sections, custom_title, message_filter_role, selection_mode, allowed_ids, show_timestamp, footer_text, include_page_nos, footer_wm, include_wm) -> bytes:
-    active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids)
+def convert_chats_to_docx(
+    chat_sections: list,
+    custom_title: str,
+    message_filter_role: str,
+    selection_mode: str,
+    allowed_ids: list,
+    show_timestamp: bool,
+    footer_text: str,
+    include_page_nos: bool,
+    footer_wm: str,
+    include_wm: bool,
+) -> bytes:
+    active_sections = get_filtered_sections(
+        chat_sections, message_filter_role, selection_mode, allowed_ids
+    )
     doc = Document()
+
+    section = doc.sections[0]
+    footer = section.footer
+    p = footer.paragraphs[0]
+
+    effective_wm = footer_wm if include_wm else ""
+    if effective_wm:
+        clean_wm = re.sub(r'<[^>]*?>', '', effective_wm)
+        r_wm = p.add_run(clean_wm)
+        r_wm.font.size = Pt(8.5)
+        r_wm.font.color.rgb = RGBColor(120, 120, 120)
+        if include_page_nos:
+            p.add_run("\t\t")
+
+    if include_page_nos:
+        r_page = p.add_run("Page ")
+        r_page.font.size = Pt(8.5)
+        r_page.font.color.rgb = RGBColor(120, 120, 120)
+        add_docx_page_number(p.add_run())
 
     if custom_title:
         title_p = doc.add_paragraph()
@@ -821,6 +824,16 @@ def convert_chats_to_docx(chat_sections, custom_title, message_filter_role, sele
         title_run.bold = True
         title_run.font.size = Pt(18)
         title_p.paragraph_format.space_after = Pt(12)
+
+    if show_timestamp:
+        ist_time_docx = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+        ts_p = doc.add_paragraph()
+        ts_run = ts_p.add_run(
+            f"Exported on: {ist_time_docx.strftime('%Y-%m-%d %H:%M IST')}"
+        )
+        ts_run.font.size = Pt(10)
+        ts_run.font.color.rgb = RGBColor(120, 120, 120)
+        ts_p.paragraph_format.space_after = Pt(18)
 
     for sec_title, messages in active_sections:
         if sec_title:
@@ -845,6 +858,14 @@ def convert_chats_to_docx(chat_sections, custom_title, message_filter_role, sele
             msg_p.add_run(clean_text)
             msg_p.paragraph_format.space_after = Pt(12)
 
+    if footer_text:
+        doc.add_paragraph().paragraph_format.space_after = Pt(24)
+        footer_p = doc.add_paragraph()
+        f_run = footer_p.add_run(footer_text)
+        f_run.font.size = Pt(9)
+        f_run.font.color.rgb = RGBColor(100, 100, 100)
+        footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
         temp_path = tmp.name
         doc.save(temp_path)
@@ -856,7 +877,7 @@ def convert_chats_to_docx(chat_sections, custom_title, message_filter_role, sele
     return docx_bytes
 
 
-# --- MAIN TABS ---
+# --- MAIN INTERFACE TABS ---
 tab_input, tab_custom, tab_preview, tab_download = st.tabs(
     ["🔗 1. Input & Fetch", "📝 2. Custom Notes & Study", "👁️ 3. Live Preview", "📥 4. Download & Audio"]
 )
@@ -874,32 +895,44 @@ with tab_input:
 
     if input_mode == "Single Link":
         share_url_single = st.text_input(
-            "ChatGPT Share Link",
-            placeholder="https://chatgpt.com/share/..."
+            "ChatGPT Share Link (Supports standard & Custom GPT links)",
+            placeholder="https://chatgpt.com/share/... or https://chatgpt.com/g/.../shared/c/..."
         )
         if share_url_single.strip():
             urls = [share_url_single.strip()]
-    else:
+
+    else:  # Bulk Links (Multiple)
         share_urls_textarea = st.text_area(
-            "ChatGPT Share Links (One link per line)",
-            placeholder="https://chatgpt.com/share/...",
+            "ChatGPT Share Links (Paste one link per line)",
+            placeholder=(
+                "https://chatgpt.com/share/...\nhttps://chatgpt.com/g/.../shared/c/..."
+            ),
             height=90,
         )
-        if st.button("📥 Load Links into Reorder Manager", key="load_bulk"):
-            raw_urls = [u.strip() for u in share_urls_textarea.split("\n") if u.strip()]
-            st.session_state.bulk_links_data = [
-                {"Position": i + 1, "URL": u, "Title": f"Conversation Section #{i + 1}"}
-                for i, u in enumerate(raw_urls)
-            ]
+        
+        col_load, col_clear = st.columns([2, 5])
+        with col_load:
+            if st.button("📥 Load Links into Reorder Manager", key="load_bulk"):
+                raw_urls = [u.strip() for u in share_urls_textarea.split("\n") if u.strip()]
+                st.session_state.bulk_links_data = [
+                    {"Position": i + 1, "URL": u, "Title": f"Conversation Section #{i + 1}"}
+                    for i, u in enumerate(raw_urls)
+                ]
 
         if st.session_state.bulk_links_data:
-            st.markdown("##### ↕️ Bulk Links Manager")
+            st.markdown("##### ↕️ Bulk Links & Custom Order Manager")
             edited_df = st.data_editor(
                 st.session_state.bulk_links_data,
                 num_rows="dynamic",
                 use_container_width=True,
                 key="bulk_order_editor",
+                column_config={
+                    "Position": st.column_config.NumberColumn("Order #", min_value=1, step=1, format="%d"),
+                    "URL": st.column_config.TextColumn("Share URL"),
+                    "Title": st.column_config.TextColumn("Section Title")
+                }
             )
+            
             try:
                 sorted_links = sorted(edited_df, key=lambda x: int(x.get("Position", 1)))
             except Exception:
@@ -912,11 +945,12 @@ with tab_input:
 
     if st.button("🔍 Fetch Chat Content Now", type="primary"):
         if not urls:
-            st.error("Please enter at least one valid ChatGPT share link.")
+            st.error("Please enter and load at least one valid ChatGPT share link.")
         else:
             st.session_state.chat_sections = []
             progress_bar = st.progress(0)
             status_text = st.empty()
+
             translation_code = lang_code_map.get(target_language, "es") if enable_translation else None
 
             failed_links = []
@@ -925,7 +959,11 @@ with tab_input:
                 try:
                     msgs = scrape_single_chat(url, enable_ai_filter, translation_code)
                     if msgs:
-                        sec_title = link_titles.get(i, f"Conversation Section #{i+1}") if input_mode == "Bulk Links (Multiple)" else (custom_title if (show_header_title and custom_title.strip()) else "")
+                        sec_title = (
+                            link_titles.get(i, f"Conversation Section #{i+1}")
+                            if input_mode == "Bulk Links (Multiple)"
+                            else (custom_title if (show_header_title and custom_title and custom_title.strip()) else "")
+                        )
                         st.session_state.chat_sections.append((sec_title, msgs))
                 except Exception as e:
                     failed_links.append(f"{url} (Error: {e})")
@@ -935,11 +973,19 @@ with tab_input:
             progress_bar.empty()
 
             if st.session_state.chat_sections:
-                st.success(f"Successfully fetched {len(st.session_state.chat_sections)} conversation(s)!")
+                st.success(
+                    f"Successfully fetched {len(st.session_state.chat_sections)}"
+                    " conversation(s)! Head over to the **Live Preview** tab."
+                )
                 if failed_links:
-                    st.warning(f"Failed: {len(failed_links)} link(s)")
+                    st.warning(
+                        f"Failed to load {len(failed_links)} link(s):\n"
+                        + "\n".join(failed_links)
+                    )
             else:
-                st.error("Could not parse conversations from links.")
+                st.error(
+                    "Could not parse any conversations from the provided links. Please check the URLs."
+                )
 
 all_message_ids = []
 id_to_label_map = {}
@@ -954,8 +1000,17 @@ if st.session_state.chat_sections:
             flat_messages_list.append(m)
             total_word_count += len(m["text"].split())
 
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("📊 **Document Stats**")
+    st.sidebar.caption(
+        f"• Total Words: **{total_word_count:,}**\n• Est. Reading Time:"
+        f" **{max(1, total_word_count // 200)} min**"
+    )
+
 selected_message_ids = all_message_ids
 if message_selection_mode == "Pick Specific Messages (Custom)" and all_message_ids:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("##### 🎯 Custom Message Selector")
     selected_message_ids = st.sidebar.multiselect(
         "Check messages to include:",
         options=all_message_ids,
@@ -966,35 +1021,41 @@ if message_selection_mode == "Pick Specific Messages (Custom)" and all_message_i
 with tab_custom:
     st.subheader("📝 Custom Note Injector Manager")
     if enable_custom_notes:
+        st.markdown("Insert custom personal notes between specific imported conversation turns.")
         if st.session_state.chat_sections and flat_messages_list:
             selected_idx_for_note = st.selectbox(
-                "Insert note before message:",
+                "Select position (insert note right before message):",
                 options=list(range(len(flat_messages_list))),
                 format_func=lambda i: f"Before [{flat_messages_list[i]['role']}] {flat_messages_list[i]['text'][:45]}..."
             )
-            note_text_input = st.text_area("Custom Note Content (Markdown)", placeholder="Type note here...")
-            if st.button("➕ Inject Note"):
+            
+            note_text_input = st.text_area("Custom Note Content (Markdown supported)", placeholder="Type your personal note or comment here...")
+            
+            if st.button("➕ Inject Note at Position"):
                 st.session_state.injected_notes[selected_idx_for_note] = note_text_input
-                st.success("Note added successfully!")
+                st.success("Note successfully added! It will appear in the live preview.")
                 
             if st.session_state.injected_notes:
-                st.markdown("##### Active Injected Notes:")
+                st.markdown("##### Current Injected Notes:")
                 for idx, ntext in list(st.session_state.injected_notes.items()):
-                    c1, c2 = st.columns([5, 1])
-                    with c1:
+                    col_n1, col_n2 = st.columns([5, 1])
+                    with col_n1:
                         st.write(f"• **Pos {idx}**: {ntext}")
-                    with c2:
+                    with col_n2:
                         if st.button("Remove", key=f"del_note_{idx}"):
                             del st.session_state.injected_notes[idx]
                             st.rerun()
         else:
-            st.info("Fetch chat content first in Tab 1.")
+            st.info("Fetch chat content first in Tab 1 to enable note injection.")
     else:
-        st.info("The **Custom Note Injector** toggle is currently turned OFF in the sidebar.")
+        st.info("The **Custom Note Injector** toggle is currently turned OFF in the sidebar. Switch it on to use this feature.")
 
 with tab_preview:
     st.subheader("Live Document Preview")
     if st.session_state.chat_sections:
+        st.caption(
+            "Instantly reflects your chosen theme, custom titles, images, Mermaid diagrams, and revision sheets."
+        )
         live_preview_html = build_html_document(
             st.session_state.chat_sections,
             theme,
@@ -1012,23 +1073,27 @@ with tab_preview:
             show_dividers,
             show_timestamp,
             footer_text,
+            chosen_accent,
+            code_theme,
+            block_radius,
             margin_mm,
             max_content_width,
+            enable_box_shadow,
             generate_toc,
             watermark_text,
             watermark_opacity / 100.0,
+            footer_watermark_text,
             show_page_numbers,
+            custom_css_injection,
             enable_study_revision,
             st.session_state.injected_notes if enable_custom_notes else {},
-            enable_two_column,
-            enable_keyword_tags,
-            enable_qr_code,
-            qr_code_target_url,
         )
         with st.container(border=True):
             st.components.v1.html(live_preview_html, height=700, scrolling=True)
     else:
-        st.info("Fetch chats first to view preview.")
+        st.info(
+            "Please enter your share links and click **Fetch Chat Content Now** in the first tab to view the preview."
+        )
 
 with tab_download:
     st.subheader("Download Document File & Audio Export")
@@ -1039,7 +1104,10 @@ with tab_download:
         with col_d1:
             if st.button("🚀 Generate & Download File Now", type="primary"):
                 try:
-                    base_filename = output_filename.strip() or "chat_export"
+                    base_filename = output_filename.strip()
+                    if not base_filename:
+                        base_filename = "chat_export"
+
                     current_html = build_html_document(
                         st.session_state.chat_sections,
                         theme,
@@ -1057,28 +1125,25 @@ with tab_download:
                         show_dividers,
                         show_timestamp,
                         footer_text,
+                        chosen_accent,
+                        code_theme,
+                        block_radius,
                         margin_mm,
                         max_content_width,
+                        enable_box_shadow,
                         generate_toc,
                         watermark_text,
                         watermark_opacity / 100.0,
+                        footer_watermark_text,
                         show_page_numbers,
+                        custom_css_injection,
                         enable_study_revision,
                         st.session_state.injected_notes if enable_custom_notes else {},
-                        enable_two_column,
-                        enable_keyword_tags,
-                        enable_qr_code,
-                        qr_code_target_url,
                     )
 
                     if "PDF" in export_format:
-                        with st.spinner("Compiling encrypted/protected PDF..."):
-                            file_data = build_pdf_document(
-                                current_html, 
-                                margin_val=margin_mm,
-                                encrypt_pdf=enable_pdf_encryption,
-                                pwd=pdf_password
-                            )
+                        with st.spinner("Compiling high-fidelity PDF Document..."):
+                            file_data = build_pdf_document(current_html, margin_val=margin_mm)
                             mime_type = "application/pdf"
                             final_name = f"{base_filename}.pdf"
                     elif "Word" in export_format:
@@ -1092,45 +1157,48 @@ with tab_download:
                                 show_timestamp,
                                 footer_text,
                                 show_page_numbers,
-                                "",
-                                False,
+                                footer_watermark_text,
+                                include_footer_wm,
                             )
-                            mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            mime_type = (
+                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            )
                             final_name = f"{base_filename}.docx"
                     elif "Markdown" in export_format:
                         with st.spinner("Generating Markdown file..."):
-                            file_data = convert_chats_to_markdown(
+                            md_text = convert_chats_to_markdown(
                                 st.session_state.chat_sections,
                                 custom_title,
                                 message_filter_role,
                                 message_selection_mode,
                                 selected_message_ids,
-                            ).encode("utf-8")
+                            )
+                            file_data = md_text.encode("utf-8")
                             mime_type = "text/markdown"
                             final_name = f"{base_filename}.md"
-                    else:
-                        with st.spinner("Generating HTML file with interactive theme switcher..."):
+                    else:  # HTML
+                        with st.spinner("Generating HTML file..."):
                             file_data = current_html.encode("utf-8")
                             mime_type = "text/html"
                             final_name = f"{base_filename}.html"
 
-                    st.success("File generated successfully!")
+                    st.success("Document built successfully! Click below to save:")
                     st.download_button(
-                        label=f"💾 Save {final_name}",
+                        label=f"💾 Click Here to Save {final_name}",
                         data=file_data,
                         file_name=final_name,
                         mime=mime_type,
                     )
                 except Exception as e:
-                    st.error(f"Error during file creation: {e}")
+                    st.error(f"An error occurred during file creation: {e}")
 
         with col_d2:
             if HAS_GTTS:
-                st.markdown("##### 🎧 Audio Summary (.mp3)")
-                if st.button("🔊 Generate Audio Summary"):
-                    with st.spinner("Synthesizing audio..."):
+                st.markdown("##### 🎧 Text-to-Speech Audio Summary (.mp3)")
+                if st.button("🔊 Generate Audio Podcast Summary"):
+                    with st.spinner("Synthesizing audio file using TTS..."):
                         try:
-                            summary_corpus = f"Audio summary for {custom_title}. "
+                            summary_corpus = f"Audio summary for document: {custom_title}. "
                             for _, msgs in st.session_state.chat_sections:
                                 for m in msgs:
                                     if m["role"] == "ChatGPT":
@@ -1152,8 +1220,8 @@ with tab_download:
                                 mime="audio/mp3"
                             )
                         except Exception as tts_err:
-                            st.error(f"TTS failed: {tts_err}")
+                            st.error(f"TTS generation failed: {tts_err}")
             else:
-                st.info("Install `gTTS` for audio exports.")
+                st.info("Install `gTTS` library to enable MP3 audio exports.")
     else:
-        st.info("Fetch your chats first.")
+        st.info("Fetch your chats first before downloading.")
