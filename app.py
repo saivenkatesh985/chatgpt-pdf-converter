@@ -462,8 +462,10 @@ def build_html_document(
     box_shadow_css = (
         "box-shadow: 0 4px 12px rgba(0,0,0,0.06);" if shadow_enabled else ""
     )
+    
+    # Use UTC time or adjust with local offset if needed (e.g., datetime.datetime.utcnow())
     timestamp_str = (
-        datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
         if show_timestamp
         else ""
     )
@@ -728,7 +730,7 @@ def convert_chats_to_docx(
     if show_timestamp:
         ts_p = doc.add_paragraph()
         ts_run = ts_p.add_run(
-            f"Exported on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            f"Exported on: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
         )
         ts_run.font.size = Pt(10)
         ts_run.font.color.rgb = RGBColor(120, 120, 120)
@@ -987,7 +989,7 @@ with tab_download:
                     show_timestamp,
                     footer_text,
                     chosen_accent,
-                    code,
+                    code_theme,
                     block_radius,
                     margin_mm,
                     max_content_width,
