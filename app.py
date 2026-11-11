@@ -11,6 +11,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 from playwright.sync_api import sync_playwright
+from collections import Counter
 
 # Optional library imports with graceful fallbacks
 try:
@@ -121,7 +122,7 @@ st.sidebar.markdown("### 🎨 Design & Advanced Studio")
 with st.sidebar.expander("📌 Document Branding & Layout", expanded=True):
     theme = st.selectbox(
         "Default Color Theme",
-        ["White", "Black (OLED)", "Notes", "Study", "Conversation"],
+        ["White", "Black OLED", "Notes", "Study", "Conversation"],
     )
     layout_view_style = st.selectbox(
         "Layout Presentation",
@@ -291,7 +292,6 @@ def extract_keywords(chat_sections) -> list:
                 if w_lower not in stopwords:
                     words.append(w_lower)
     
-    from collections import Counter
     counts = Counter(words)
     top_common = [word.capitalize() for word, _ in counts.most_common(5)]
     return top_common if top_common else ["AI", "Document", "Summary", "ChatGPT", "Studio"]
@@ -490,7 +490,6 @@ def build_pdf_document(full_html: str, margin_val: int, encrypt_pdf: bool, pwd: 
         page.pdf(path=temp_path, format="Letter", margin=pdf_margins, print_background=True)
         browser.close()
 
-    # Apply password protection using pypdf if requested
     final_pdf_path = temp_path
     if encrypt_pdf and pwd and HAS_PYPDF:
         try:
@@ -570,7 +569,6 @@ def build_html_document(
     </div>
     ''' if show_header_title else ""
 
-    # AI Keyword Tags
     tags_html = ""
     if enable_tags and active_sections:
         keywords = extract_keywords(active_sections)
@@ -676,6 +674,8 @@ def build_html_document(
     }
     """ if enable_two_col else ""
 
+    theme_class_default = theme.lower().replace(" ", "-")
+
     full_html = f'''
     <!DOCTYPE html>
     <html lang="en">
@@ -689,9 +689,10 @@ def build_html_document(
                 localStorage.setItem('studio_theme', mode);
             }}
             window.addEventListener('DOMContentLoaded', () => {{
-                const saved = localStorage.getItem('studio_theme') || '{theme.lower().replace(" ", "-")}';
+                const saved = localStorage.getItem('studio_theme') || '{theme_class_default}';
                 setTheme(saved);
-                document.getElementById('theme-switcher-select').value = saved;
+                const sel = document.getElementById('theme-switcher-select');
+                if(sel) sel.value = saved;
             }});
         </script>
         <style>
@@ -702,9 +703,9 @@ def build_html_document(
             body.white .theme-box, body.white .ai-bubble {{ background-color: #f6f8fa; border: 1px solid #e1e4e8; }}
             body.white .user-bubble, body.white .user-card {{ background-color: #edf7f0; color: #114f2e; }}
 
-            body.black-(oled) {{ background-color: #000000; color: #f3f4f6; }}
-            body.black-(oled) .theme-box, body.black-(oled) .ai-bubble {{ background-color: #121212; border: 1px solid #27272a; color: #f3f4f6; }}
-            body.black-(oled) .user-bubble, body.black-(oled) .user-card {{ background-color: #1a1a1a; color: #e4e4e7; border: 1px solid #27272a; }}
+            body.black-oled {{ background-color: #000000; color: #f3f4f6; }}
+            body.black-oled .theme-box, body.black-oled .ai-bubble {{ background-color: #121212; border: 1px solid #27272a; color: #f3f4f6; }}
+            body.black-oled .user-bubble, body.black-oled .user-card {{ background-color: #1a1a1a; color: #e4e4e7; border: 1px solid #27272a; }}
 
             body.notes {{ background-color: #fbf0d9; color: #2c221e; }}
             body.notes .theme-box, body.notes .ai-bubble {{ background-color: #f4e7ce; border: 1px solid #e6d7bc; }}
@@ -745,7 +746,7 @@ def build_html_document(
             img {{ max-width: 100%; height: auto; border-radius: 6px; }}
             .mermaid {{ background-color: rgba(0,0,0,0.03); padding: 12px; border-radius: 8px; text-align: center; margin: 15px 0; }}
 
-            /* Interactive Floating Theme Switcher Badge */
+            /* Interactive Floating Theme Switcher Bar */
             .theme-switcher-bar {{
                 position: fixed;
                 bottom: 20px;
@@ -760,7 +761,7 @@ def build_html_document(
                 display: flex;
                 align-items: center;
                 gap: 8px;
-            }
+            }}
             .theme-switcher-bar select {{
                 background: #222;
                 color: #fff;
@@ -773,7 +774,7 @@ def build_html_document(
             {two_column_css}
         </style>
     </head>
-    <body class="{theme.lower().replace(' ', '-')}">
+    <body class="{theme_class_default}">
         {watermark_html}
         <div class="page-wrapper">
             {header_html}
@@ -785,9 +786,9 @@ def build_html_document(
         </div>
         <div class="theme-switcher-bar">
             <span>🎨 Theme:</span>
-            id="theme-switcher-select" onchange="setTheme(this.value)">
+            <select id="theme-switcher-select" onchange="setTheme(this.value)">
                 <option value="white">White</option>
-                <option value="black-(oled)">Black OLED</option>
+                <option value="black-oled">Black OLED</option>
                 <option value="notes">Notes</option>
                 <option value="study">Study</option>
                 <option value="conversation">Conversation</option>
@@ -813,9 +814,6 @@ def convert_chats_to_markdown(chat_sections, custom_title, message_filter_role, 
 def convert_chats_to_docx(chat_sections, custom_title, message_filter_role, selection_mode, allowed_ids, show_timestamp, footer_text, include_page_nos, footer_wm, include_wm) -> bytes:
     active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids)
     doc = Document()
-    section = doc.sections[0]
-    footer = section.footer
-    p = footer.paragraphs[0]
 
     if custom_title:
         title_p = doc.add_paragraph()
