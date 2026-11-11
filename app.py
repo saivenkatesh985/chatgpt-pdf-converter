@@ -414,7 +414,7 @@ def build_html_document(
     if theme == "Black (OLED)":
         bg_color, text_color = "#000000", "#f3f4f6"
         user_bg, user_text = "#121212", "#e4e4e7"
-        border_color, code_bg, code_color = "#27272a", "#121212", "#000000"
+        border_color, code_bg, code_color = "#27272a", "#121212", "#f3f4f6"
     elif theme == "Notes":
         bg_color, text_color = "#fbf0d9", "#2c221e"
         user_bg, user_text = "#e6f2ed", "#1b4d3e"
@@ -638,11 +638,11 @@ def build_html_document(
             p {{ margin-top: 0; margin-bottom: {paragraph_spacing}px; }}
             ul, ol {{ padding-left: 20px; margin-top: 5px; margin-bottom: 15px; }}
             li {{ margin-bottom: 6px; }}
-            pre {{ background-color: {code_bg} !important; padding: 14px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; font-family: Consolas, Monaco, monospace; border: 1px solid {border_color}; }}
-            code {{ font-family: Consolas, Monaco, monospace; padding: 2px 4px; border-radius: 4px; }}
+            pre, pre code {{ background-color: {code_bg} !important; color: {code_color} !important; padding: 14px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; font-family: Consolas, Monaco, monospace; border: 1px solid {border_color}; }}
+            code {{ font-family: Consolas, Monaco, monospace; padding: 2px 4px; border-radius: 4px; color: {code_color} !important; background-color: {code_bg} !important; }}
             table {{ border-collapse: collapse; width: 100%; margin-top: 15px; margin-bottom: 20px; table-layout: fixed; }}
             th, td {{ border: 1px solid {border_color}; padding: 10px 14px; text-align: left; word-wrap: break-word; }}
-            th {{ background-color: {code_bg} !important; font-weight: bold; }}
+            th {{ background-color: {code_bg} !important; font-weight: bold; color: {text_color} !important; }}
             img {{ max-width: 100%; height: auto; border-radius: 6px; }}
             /* Custom User CSS Injection */
             {custom_css}
@@ -794,17 +794,17 @@ with tab_input:
 
     if input_mode == "Single Link":
         share_url_single = st.text_input(
-            "ChatGPT single Link",
-            placeholder="https://chatgpt.com/share/..."
+            "ChatGPT Share Link (Supports standard & Custom GPT links)",
+            placeholder="https://chatgpt.com/share/... or https://chatgpt.com/g/.../shared/c/..."
         )
         if share_url_single.strip():
             urls = [share_url_single.strip()]
 
     else:  # Bulk Links (Multiple)
         share_urls_textarea = st.text_area(
-            "ChatGPT Links (Paste one link per line)",
+            "ChatGPT Share Links (Paste one link per line)",
             placeholder=(
-                "https://chatgpt.com/share/...\nhttps://chatgpt.com/share/......"
+                "https://chatgpt.com/share/...\nhttps://chatgpt.com/g/.../shared/c/..."
             ),
             height=90,
         )
@@ -987,7 +987,7 @@ with tab_download:
                     show_timestamp,
                     footer_text,
                     chosen_accent,
-                    code_theme,
+                    code,
                     block_radius,
                     margin_mm,
                     max_content_width,
