@@ -54,7 +54,7 @@ st.title("⬇️ ChatGPT Link to Multi-Format Document Studio")
 st.markdown(
     "Transform single or multiple public ChatGPT conversations into"
     " professionally styled Word, Markdown, PDF, or HTML documents with advanced"
-    " custom controls, ASCII & Mind Map visuals, and robust UTF-8 math notation."
+    " custom controls and robust UTF-8 math notation."
 )
 
 # --- SIDEBAR: ORGANIZED LAYOUT STUDIO ---
@@ -122,7 +122,6 @@ with st.sidebar.expander("✨ Styling, Code & Accents", expanded=False):
         "Message Box Corners", ["Sharp (0px)", "Rounded (6px)", "Pill (12px)"]
     )
     enable_box_shadow = st.checkbox("Add Subtle Shadow to Boxes", value=True)
-    enable_ascii_mindmaps = st.checkbox("Generate ASCII & Mind Map Visuals for Structured Lists", value=True)
     custom_css_injection = st.text_area(
         "Custom CSS Injector (Optional)",
         placeholder="e.g., body { filter: contrast(110%); }",
@@ -177,49 +176,6 @@ def clean_assistant_text(text: str) -> str:
     return pattern.sub("", text).strip()
 
 
-def generate_ascii_mind_map(text: str) -> str:
-    """Detects bullet blocks or hierarchical section items and converts them into ASCII tree mind maps."""
-    lines = text.split("\n")
-    new_lines = []
-    in_list = False
-    list_items = []
-
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith(("- ", "* ", "1. ", "2. ", "3. ", "4. ", "5. ", "6. ", "7. ", "8. ", "9. ")):
-            if not in_list:
-                in_list = True
-                list_items = []
-            clean_item = re.sub(r"^(-\s+|\*\s+|\d+\.\s+)", "", stripped)
-            list_items.append(clean_item)
-        else:
-            if in_list and len(list_items) >= 2:
-                # Render ASCII Mind Map tree block
-                tree_html = '<div style="font-family: Consolas, Monaco, monospace; background: rgba(16, 163, 127, 0.06); border-left: 3px solid #10a37f; padding: 12px 16px; margin: 12px 0; border-radius: 6px; font-size: 0.9em; white-space: pre-wrap;">'
-                tree_html += "<b>🌳 ASCII Mind Map / Hierarchy:</b>\n"
-                tree_html += "└── Core Concept\n"
-                for idx, item in enumerate(list_items):
-                    prefix = "    ├── " if idx < len(list_items) - 1 else "    └── "
-                    tree_html += f"{prefix}{item}\n"
-                tree_html += '</div>'
-                new_lines.append(tree_html)
-                list_items = []
-            in_list = False
-            new_lines.append(line)
-
-    if in_list and len(list_items) >= 2:
-        tree_html = '<div style="font-family: Consolas, Monaco, monospace; background: rgba(16, 163, 127, 0.06); border-left: 3px solid #10a37f; padding: 12px 16px; margin: 12px 0; border-radius: 6px; font-size: 0.9em; white-space: pre-wrap;">'
-        tree_html += "<b>🌳 ASCII Mind Map / Hierarchy:</b>\n"
-        tree_html += "└── Core Concept\n"
-        for idx, item in enumerate(list_items):
-            prefix = "    ├── " if idx < len(list_items) - 1 else "    └── "
-            tree_html += f"{prefix}{item}\n"
-        tree_html += '</div>'
-        new_lines.append(tree_html)
-
-    return "\n".join(new_lines)
-
-
 def parse_math_expression_blocks(text: str) -> str:
     """Robustly parses LaTeX tags, replaces arrows with UTF-8, and formats formulas & path blocks cleanly."""
     text = text.replace(r'\tilde{[f}', 'f').replace(r'\tilde{f}', 'f')
@@ -263,14 +219,12 @@ def parse_math_expression_blocks(text: str) -> str:
     return text
 
 
-def parse_custom_tags_and_flowcharts(text: str, enable_mindmaps: bool) -> str:
+def parse_custom_tags_and_flowcharts(text: str) -> str:
     text = parse_math_expression_blocks(text)
-    if enable_mindmaps:
-        text = generate_ascii_mind_map(text)
     return text
 
 
-def scrape_single_chat(url: str, apply_filter: bool, enable_mindmaps: bool) -> list:
+def scrape_single_chat(url: str, apply_filter: bool) -> list:
     clean_url = url.split("?")[0].strip()
     if not clean_url:
         return []
@@ -329,7 +283,7 @@ def scrape_single_chat(url: str, apply_filter: bool, enable_mindmaps: bool) -> l
                             text_content = clean_assistant_text(text_content)
 
                         if text_content.strip():
-                            parsed_text = parse_custom_tags_and_flowcharts(text_content, enable_mindmaps)
+                            parsed_text = parse_custom_tags_and_flowcharts(text_content)
                             formatted_html = markdown.markdown(
                                 parsed_text, extensions=["fenced_code", "tables"]
                             )
@@ -905,7 +859,7 @@ with tab_input:
             for i, url in enumerate(urls):
                 status_text.text(f"Fetching link {i+1} of {len(urls)}...")
                 try:
-                    msgs = scrape_single_chat(url, enable_ai_filter, enable_ascii_mindmaps)
+                    msgs = scrape_single_chat(url, enable_ai_filter)
                     if msgs:
                         sec_title = (
                             link_titles.get(i, f"Conversation Section #{i+1}")
