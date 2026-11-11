@@ -1,5 +1,7 @@
-streamlit>=1.30.0
-requests>=2.31.0
-markdown>=3.5.0
-python-docx>=1.1.0
-reportlab>=4.0.0
+streamlit
+playwright
+markdown
+requests
+python-docx
+deep-translator
+gTTS
