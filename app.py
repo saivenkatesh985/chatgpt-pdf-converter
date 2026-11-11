@@ -794,17 +794,17 @@ with tab_input:
 
     if input_mode == "Single Link":
         share_url_single = st.text_input(
-            "ChatGPT Share Link (Supports standard & Custom GPT links)",
-            placeholder="https://chatgpt.com/share/... or https://chatgpt.com/g/.../shared/c/..."
+            "ChatGPT single Link",
+            placeholder="https://chatgpt.com/share/..."
         )
         if share_url_single.strip():
             urls = [share_url_single.strip()]
 
     else:  # Bulk Links (Multiple)
         share_urls_textarea = st.text_area(
-            "ChatGPT Share Links (Paste one link per line)",
+            "ChatGPT Links (Paste one link per line)",
             placeholder=(
-                "https://chatgpt.com/share/...\nhttps://chatgpt.com/g/.../shared/c/..."
+                "https://chatgpt.com/share/...\nhttps://chatgpt.com/share/......"
             ),
             height=90,
         )
