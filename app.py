@@ -11,7 +11,6 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 from playwright.sync_api import sync_playwright
-from collections import Counter
 
 # Optional library imports with graceful fallbacks
 try:
@@ -49,7 +48,7 @@ st.set_page_config(
     page_title="ChatGPT Document Studio Pro", page_icon="✨", layout="wide"
 )
 
-# --- PROFESSIONAL UI & DESIGN SYSTEM CSS (WITH DARK SIDEBAR) ---
+# --- PROFESSIONAL UI & DESIGN SYSTEM CSS ---
 st.markdown(
     """
     <style>
@@ -57,19 +56,6 @@ st.markdown(
 
         html, body, [class*="css"] {
             font-family: 'Inter', sans-serif !important;
-        }
-
-        /* Force dark background and white text for the sidebar */
-        section[data-testid="stSidebar"] {
-            background-color: #121212 !important;
-            color: #f3f4f6 !important;
-            border-right: 1px solid #27272a;
-        }
-
-        section[data-testid="stSidebar"] .stMarkdown, 
-        section[data-testid="stSidebar"] label, 
-        section[data-testid="stSidebar"] .streamlit-expanderHeader {
-            color: #f3f4f6 !important;
         }
 
         .studio-header {
@@ -89,19 +75,18 @@ st.markdown(
             opacity: 0.9;
             font-size: 1.05rem;
             margin-bottom: 0;
-            color: #ffffff !important;
         }
 
         .stButton>button {
             border-radius: 8px;
             font-weight: 600;
             padding: 0.5rem 1rem;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(0,0,0,0.08);
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .stButton>button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.08);
         }
 
         div[data-testid="stVerticalBlock"] > div[style*="border"] {
@@ -109,6 +94,11 @@ st.markdown(
             border: 1px solid #e5e7eb;
             background: #ffffff;
             box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+        }
+
+        section[data-testid="stSidebar"] {
+            background-color: #f8fafc;
+            border-right: 1px solid #e2e8f0;
         }
     </style>
     """,
@@ -119,7 +109,7 @@ st.markdown(
     """
     <div class="studio-header">
         <h1>✨ ChatGPT Document Studio Pro</h1>
-        <p>Transform conversation links into publication-ready documents featuring Telugu & Hindi translation, AI keyword metadata, password protection, and interactive themes.</p>
+        <p>Transform conversation links into publication-ready documents featuring AI keyword metadata, password protection, QR verification, and interactive theme-switching.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -131,7 +121,7 @@ st.sidebar.markdown("### 🎨 Design & Advanced Studio")
 with st.sidebar.expander("📌 Document Branding & Layout", expanded=True):
     theme = st.selectbox(
         "Default Color Theme",
-        ["White", "Black OLED", "Notes", "Study", "Conversation"],
+        ["White", "Black (OLED)", "Notes", "Study", "Conversation"],
     )
     layout_view_style = st.selectbox(
         "Layout Presentation",
@@ -140,7 +130,7 @@ with st.sidebar.expander("📌 Document Branding & Layout", expanded=True):
     enable_two_column = st.checkbox("📰 Dual-Column Journal Layout", value=False)
     font_style = st.selectbox("Font Style", ["Sans-serif", "Serif", "Monospace"])
     custom_title = st.text_input(
-        "Document Title Text", value=""
+        "Document Title Text", value="ChatGPT Conversation Export"
     )
     header_alignment = st.selectbox(
         "Header Alignment", ["Left", "Center", "Right"]
@@ -164,31 +154,12 @@ with st.sidebar.expander("🌐 Advanced Features & Toggles", expanded=False):
     enable_translation = st.checkbox("Enable Live Translation", value=False)
     target_language = st.selectbox(
         "Target Language",
-        [
-            "Telugu",
-            "Hindi",
-            "Spanish",
-            "French",
-            "German",
-            "Japanese",
-            "Chinese (Simplified)",
-            "Italian",
-            "Portuguese",
-            "Russian",
-        ],
+        ["Spanish", "French", "German", "Japanese", "Chinese (Simplified)", "Italian", "Portuguese", "Russian"],
         disabled=not enable_translation
     )
     lang_code_map = {
-        "Telugu": "te",
-        "Hindi": "hi",
-        "Spanish": "es", 
-        "French": "fr", 
-        "German": "de", 
-        "Japanese": "ja",
-        "Chinese (Simplified)": "zh-CN", 
-        "Italian": "it", 
-        "Portuguese": "pt", 
-        "Russian": "ru"
+        "Spanish": "es", "French": "fr", "German": "de", "Japanese": "ja",
+        "Chinese (Simplified)": "zh-CN", "Italian": "it", "Portuguese": "pt", "Russian": "ru"
     }
 
     st.markdown("---")
@@ -320,6 +291,7 @@ def extract_keywords(chat_sections) -> list:
                 if w_lower not in stopwords:
                     words.append(w_lower)
     
+    from collections import Counter
     counts = Counter(words)
     top_common = [word.capitalize() for word, _ in counts.most_common(5)]
     return top_common if top_common else ["AI", "Document", "Summary", "ChatGPT", "Studio"]
@@ -396,17 +368,6 @@ def scrape_single_chat(url: str, apply_filter: bool, target_lang: str = None) ->
                                 
                     text_content = "".join(extracted_texts)
                     text_content = re.sub(r".*?", "", text_content)
-
-                    # --- STRIP FILE ATTACHMENTS & METADATA ---
-                    text_content = re.sub(r"!\[.*?\]\(.*?\)", "", text_content)
-                    text_content = re.sub(
-                        r"(?:the\s+output\s+of\s+this\s+plugin\s+was\s+redacted\.?|reference:\s*operating\s+system\s+concepts[^.\n]*\.)",
-                        "",
-                        text_content,
-                        flags=re.IGNORECASE
-                    )
-                    text_content = text_content.strip()
-                    # ----------------------------------------
 
                     if text_content.strip():
                         role_label = "User" if author == "user" else "ChatGPT"
@@ -529,6 +490,7 @@ def build_pdf_document(full_html: str, margin_val: int, encrypt_pdf: bool, pwd: 
         page.pdf(path=temp_path, format="Letter", margin=pdf_margins, print_background=True)
         browser.close()
 
+    # Apply password protection using pypdf if requested
     final_pdf_path = temp_path
     if encrypt_pdf and pwd and HAS_PYPDF:
         try:
@@ -590,9 +552,9 @@ def build_html_document(
     )
 
     font_map = {
-        "Sans-serif": '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Telugu", "Noto Sans Devanagari", sans-serif',
-        "Serif": 'Georgia, Cambria, "Times New Roman", "Noto Sans Telugu", "Noto Sans Devanagari", Times, serif',
-        "Monospace": 'Menlo, Monaco, Consolas, "Courier New", "Noto Sans Telugu", "Noto Sans Devanagari", monospace',
+        "Sans-serif": '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        "Serif": 'Georgia, Cambria, "Times New Roman", Times, serif',
+        "Monospace": 'Menlo, Monaco, Consolas, "Courier New", monospace',
     }
     chosen_font = font_map.get(font_style, font_style)
     chosen_padding = f"{margin_val}mm"
@@ -606,8 +568,9 @@ def build_html_document(
         {custom_title}
         {timestamp_html}
     </div>
-    ''' if (show_header_title and custom_title.strip()) else ""
+    ''' if show_header_title else ""
 
+    # AI Keyword Tags
     tags_html = ""
     if enable_tags and active_sections:
         keywords = extract_keywords(active_sections)
@@ -713,14 +676,11 @@ def build_html_document(
     }
     """ if enable_two_col else ""
 
-    theme_class_default = theme.lower().replace(" ", "-")
-
     full_html = f'''
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700&family=Noto+Sans+Telugu:wght@400;600;700&display=swap" rel="stylesheet">
         <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
         <script>
             mermaid.initialize({{ startOnLoad: true, theme: 'default' }});
@@ -729,10 +689,9 @@ def build_html_document(
                 localStorage.setItem('studio_theme', mode);
             }}
             window.addEventListener('DOMContentLoaded', () => {{
-                const saved = localStorage.getItem('studio_theme') || '{theme_class_default}';
+                const saved = localStorage.getItem('studio_theme') || '{theme.lower().replace(" ", "-")}';
                 setTheme(saved);
-                const sel = document.getElementById('theme-switcher-select');
-                if(sel) sel.value = saved;
+                document.getElementById('theme-switcher-select').value = saved;
             }});
         </script>
         <style>
@@ -743,9 +702,9 @@ def build_html_document(
             body.white .theme-box, body.white .ai-bubble {{ background-color: #f6f8fa; border: 1px solid #e1e4e8; }}
             body.white .user-bubble, body.white .user-card {{ background-color: #edf7f0; color: #114f2e; }}
 
-            body.black-oled {{ background-color: #000000; color: #f3f4f6; }}
-            body.black-oled .theme-box, body.black-oled .ai-bubble {{ background-color: #121212; border: 1px solid #27272a; color: #f3f4f6; }}
-            body.black-oled .user-bubble, body.black-oled .user-card {{ background-color: #1a1a1a; color: #e4e4e7; border: 1px solid #27272a; }}
+            body.black-(oled) {{ background-color: #000000; color: #f3f4f6; }}
+            body.black-(oled) .theme-box, body.black-(oled) .ai-bubble {{ background-color: #121212; border: 1px solid #27272a; color: #f3f4f6; }}
+            body.black-(oled) .user-bubble, body.black-(oled) .user-card {{ background-color: #1a1a1a; color: #e4e4e7; border: 1px solid #27272a; }}
 
             body.notes {{ background-color: #fbf0d9; color: #2c221e; }}
             body.notes .theme-box, body.notes .ai-bubble {{ background-color: #f4e7ce; border: 1px solid #e6d7bc; }}
@@ -786,7 +745,7 @@ def build_html_document(
             img {{ max-width: 100%; height: auto; border-radius: 6px; }}
             .mermaid {{ background-color: rgba(0,0,0,0.03); padding: 12px; border-radius: 8px; text-align: center; margin: 15px 0; }}
 
-            /* Interactive Floating Theme Switcher Bar */
+            /* Interactive Floating Theme Switcher Badge */
             .theme-switcher-bar {{
                 position: fixed;
                 bottom: 20px;
@@ -801,7 +760,7 @@ def build_html_document(
                 display: flex;
                 align-items: center;
                 gap: 8px;
-            }}
+            }
             .theme-switcher-bar select {{
                 background: #222;
                 color: #fff;
@@ -814,7 +773,7 @@ def build_html_document(
             {two_column_css}
         </style>
     </head>
-    <body class="{theme_class_default}">
+    <body class="{theme.lower().replace(' ', '-')}">
         {watermark_html}
         <div class="page-wrapper">
             {header_html}
@@ -826,9 +785,9 @@ def build_html_document(
         </div>
         <div class="theme-switcher-bar">
             <span>🎨 Theme:</span>
-            <select id="theme-switcher-select" onchange="setTheme(this.value)">
+            id="theme-switcher-select" onchange="setTheme(this.value)">
                 <option value="white">White</option>
-                <option value="black-oled">Black OLED</option>
+                <option value="black-(oled)">Black OLED</option>
                 <option value="notes">Notes</option>
                 <option value="study">Study</option>
                 <option value="conversation">Conversation</option>
@@ -842,7 +801,7 @@ def build_html_document(
 
 def convert_chats_to_markdown(chat_sections, custom_title, message_filter_role, selection_mode, allowed_ids) -> str:
     active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids)
-    md_content = f"# {custom_title}\n\n" if custom_title else ""
+    md_content = f"# {custom_title}\n\n"
     for sec_title, messages in active_sections:
         if sec_title:
             md_content += f"## {sec_title}\n\n"
@@ -851,9 +810,12 @@ def convert_chats_to_markdown(chat_sections, custom_title, message_filter_role, 
     return md_content
 
 
-def convert_chats_to_docx(chat_sections, custom_title, message_filter_role, selection_mode, allowed_ids) -> bytes:
+def convert_chats_to_docx(chat_sections, custom_title, message_filter_role, selection_mode, allowed_ids, show_timestamp, footer_text, include_page_nos, footer_wm, include_wm) -> bytes:
     active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids)
     doc = Document()
+    section = doc.sections[0]
+    footer = section.footer
+    p = footer.paragraphs[0]
 
     if custom_title:
         title_p = doc.add_paragraph()
@@ -984,6 +946,7 @@ with tab_input:
 all_message_ids = []
 id_to_label_map = {}
 flat_messages_list = []
+total_word_count = 0
 if st.session_state.chat_sections:
     for _, msgs in st.session_state.chat_sections:
         for m in msgs:
@@ -991,6 +954,7 @@ if st.session_state.chat_sections:
             all_message_ids.append(mid)
             id_to_label_map[mid] = f"[{m['role']}] {m['text'][:55]}..."
             flat_messages_list.append(m)
+            total_word_count += len(m["text"].split())
 
 selected_message_ids = all_message_ids
 if message_selection_mode == "Pick Specific Messages (Custom)" and all_message_ids:
@@ -1127,6 +1091,11 @@ with tab_download:
                                 message_filter_role,
                                 message_selection_mode,
                                 selected_message_ids,
+                                show_timestamp,
+                                footer_text,
+                                show_page_numbers,
+                                "",
+                                False,
                             )
                             mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                             final_name = f"{base_filename}.docx"
@@ -1169,8 +1138,7 @@ with tab_download:
                                     if m["role"] == "ChatGPT":
                                         summary_corpus += m["text"][:300] + ". "
 
-                            audio_lang_code = lang_code_map.get(target_language, "en") if enable_translation else "en"
-                            tts = gTTS(text=summary_corpus[:3500], lang=audio_lang_code, slow=False)
+                            tts = gTTS(text=summary_corpus[:3500], lang='en', slow=False)
                             audio_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
                             tts.save(audio_tmp.name)
                             
