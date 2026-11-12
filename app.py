@@ -259,9 +259,6 @@ if "bulk_links_data" not in st.session_state:
 if "injected_notes" not in st.session_state:
     st.session_state.injected_notes = {}
 
-if "removed_snippets" not in st.session_state:
-    st.session_state.removed_snippets = set()
-
 
 # --- HELPER FUNCTIONS ---
 def clean_assistant_text(text: str) -> str:
@@ -400,6 +397,17 @@ def scrape_single_chat(url: str, apply_filter: bool, target_lang: str = None) ->
                     text_content = "".join(extracted_texts)
                     text_content = re.sub(r".*?", "", text_content)
 
+                    # --- AUTO-STRIP UNWANTED SOURCES & PLUGIN REDACTIONS ---
+                    unwanted_phrases = [
+                        "The output of this plugin was redacted",
+                        "Reference: Operating System Concepts",
+                        "Silberschatz",
+                        "Demand Paging"
+                    ]
+                    for phrase in unwanted_phrases:
+                        text_content = text_content.replace(phrase, "")
+                    # -----------------------------------------------------
+
                     if text_content.strip():
                         role_label = "User" if author == "user" else "ChatGPT"
                         if role_label == "ChatGPT" and apply_filter:
@@ -428,8 +436,26 @@ def scrape_single_chat(url: str, apply_filter: bool, target_lang: str = None) ->
     return messages
 
 
+def add_docx_page_number(run):
+    fldChar1 = OxmlElement("w:fldChar")
+    fldChar1.set(qn("w:fldCharType"), "begin")
+    instrText = OxmlElement("w:instrText")
+    instrText.set(qn("xml:space"), "preserve")
+    instrText.text = "PAGE"
+    fldChar2 = OxmlElement("w:fldChar")
+    fldChar2.set(qn("w:fldCharType"), "separate")
+    fldChar3 = OxmlElement("w:fldChar")
+    fldChar3.set(qn("w:fldCharType"), "end")
+
+    r = run._r
+    r.append(fldChar1)
+    r.append(instrText)
+    r.append(fldChar2)
+    r.append(fldChar3)
+
+
 def get_filtered_sections(
-    chat_sections, message_filter_role, selection_mode, allowed_ids, removed_snippets
+    chat_sections, message_filter_role, selection_mode, allowed_ids
 ):
     if not chat_sections:
         return []
@@ -448,21 +474,7 @@ def get_filtered_sections(
                 if msg.get("id") not in allowed_ids:
                     continue
 
-            # Strip out dynamically deselected text snippets/references
-            msg_text = msg["text"]
-            msg_html = msg["html"]
-            for snippet in removed_snippets:
-                if snippet in msg_text:
-                    msg_text = msg_text.replace(snippet, "")
-                    msg_html = msg_html.replace(snippet, "")
-
-            if msg_text.strip():
-                new_messages.append({
-                    "id": msg["id"],
-                    "role": role,
-                    "text": msg_text,
-                    "html": markdown.markdown(parse_custom_tags_and_flowcharts(msg_text), extensions=["fenced_code", "tables"])
-                })
+            new_messages.append(msg)
         if new_messages:
             filtered_sections.append((sec_title, new_messages))
     return filtered_sections
@@ -554,7 +566,6 @@ def build_html_document(
     message_filter_role: str,
     selection_mode: str,
     allowed_ids: list,
-    removed_snippets: set,
     show_header_title: bool,
     custom_title: str,
     header_alignment: str,
@@ -575,7 +586,7 @@ def build_html_document(
     qr_url: str,
 ) -> str:
     active_sections = get_filtered_sections(
-        chat_sections, message_filter_role, selection_mode, allowed_ids, removed_snippets
+        chat_sections, message_filter_role, selection_mode, allowed_ids
     )
 
     font_map = {
@@ -829,8 +840,8 @@ def build_html_document(
     return full_html
 
 
-def convert_chats_to_markdown(chat_sections, custom_title, message_filter_role, selection_mode, allowed_ids, removed_snippets) -> str:
-    active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids, removed_snippets)
+def convert_chats_to_markdown(chat_sections, custom_title, message_filter_role, selection_mode, allowed_ids) -> str:
+    active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids)
     md_content = f"# {custom_title}\n\n" if custom_title else ""
     for sec_title, messages in active_sections:
         if sec_title:
@@ -840,8 +851,8 @@ def convert_chats_to_markdown(chat_sections, custom_title, message_filter_role, 
     return md_content
 
 
-def convert_chats_to_docx(chat_sections, custom_title, message_filter_role, selection_mode, allowed_ids, removed_snippets) -> bytes:
-    active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids, removed_snippets)
+def convert_chats_to_docx(chat_sections, custom_title, message_filter_role, selection_mode, allowed_ids) -> bytes:
+    active_sections = get_filtered_sections(chat_sections, message_filter_role, selection_mode, allowed_ids)
     doc = Document()
 
     if custom_title:
@@ -990,34 +1001,6 @@ if message_selection_mode == "Pick Specific Messages (Custom)" and all_message_i
         format_func=lambda x: id_to_label_map.get(x, x),
     )
 
-# --- NEW FEATURE: SOURCE & ARTIFACT SNIPPET FILTER ---
-detected_snippets = []
-if st.session_state.chat_sections:
-    common_phrases_to_catch = [
-        "Operating System Concepts",
-        "Silberschatz",
-        "The output of this plugin was redacted",
-        "Demand Paging",
-        "Reference:"
-    ]
-    for _, msgs in st.session_state.chat_sections:
-        for m in msgs:
-            for phrase in common_phrases_to_catch:
-                if phrase.lower() in m["text"].lower() and phrase not in detected_snippets:
-                    detected_snippets.append(phrase)
-
-if detected_snippets:
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🧹 Source & Reference Filter")
-    st.sidebar.markdown("Uncheck unwanted citations or plugin texts detected in your chats:")
-    
-    active_removed = []
-    for snippet in detected_snippets:
-        keep_snippet = st.sidebar.checkbox(f"Keep: '{snippet[:35]}...'", value=True, key=f"snip_{snippet}")
-        if not keep_snippet:
-            active_removed.append(snippet)
-    st.session_state.removed_snippets = set(active_removed)
-
 with tab_custom:
     st.subheader("📝 Custom Note Injector Manager")
     if enable_custom_notes:
@@ -1061,7 +1044,6 @@ with tab_preview:
             message_filter_role,
             message_selection_mode,
             selected_message_ids,
-            st.session_state.removed_snippets,
             show_header_title,
             custom_title,
             header_alignment,
@@ -1107,7 +1089,6 @@ with tab_download:
                         message_filter_role,
                         message_selection_mode,
                         selected_message_ids,
-                        st.session_state.removed_snippets,
                         show_header_title,
                         custom_title,
                         header_alignment,
@@ -1146,7 +1127,6 @@ with tab_download:
                                 message_filter_role,
                                 message_selection_mode,
                                 selected_message_ids,
-                                st.session_state.removed_snippets,
                             )
                             mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                             final_name = f"{base_filename}.docx"
@@ -1158,7 +1138,6 @@ with tab_download:
                                 message_filter_role,
                                 message_selection_mode,
                                 selected_message_ids,
-                                st.session_state.removed_snippets,
                             ).encode("utf-8")
                             mime_type = "text/markdown"
                             final_name = f"{base_filename}.md"
