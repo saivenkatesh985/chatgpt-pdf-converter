@@ -760,7 +760,7 @@ def build_html_document(
                 display: flex;
                 align-items: center;
                 gap: 8px;
-            }
+            }}
             .theme-switcher-bar select {{
                 background: #222;
                 color: #fff;
