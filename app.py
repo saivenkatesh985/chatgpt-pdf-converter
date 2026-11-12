@@ -49,7 +49,7 @@ st.set_page_config(
     page_title="ChatGPT Document Studio Pro", page_icon="✨", layout="wide"
 )
 
-# --- PROFESSIONAL UI & DESIGN SYSTEM CSS ---
+# --- PROFESSIONAL UI & DESIGN SYSTEM CSS (WITH FIXED SIDEBAR CONTRAST) ---
 st.markdown(
     """
     <style>
@@ -57,6 +57,19 @@ st.markdown(
 
         html, body, [class*="css"] {
             font-family: 'Inter', sans-serif !important;
+        }
+
+        /* Force clean readable text colors in sidebar regardless of Streamlit theme settings */
+        section[data-testid="stSidebar"] {
+            background-color: #f8fafc !important;
+            color: #1e293b !important;
+            border-right: 1px solid #e2e8f0;
+        }
+
+        section[data-testid="stSidebar"] .stMarkdown, 
+        section[data-testid="stSidebar"] label, 
+        section[data-testid="stSidebar"] .streamlit-expanderHeader {
+            color: #1e293b !important;
         }
 
         .studio-header {
@@ -76,6 +89,7 @@ st.markdown(
             opacity: 0.9;
             font-size: 1.05rem;
             margin-bottom: 0;
+            color: #ffffff !important;
         }
 
         .stButton>button {
@@ -95,11 +109,6 @@ st.markdown(
             border: 1px solid #e5e7eb;
             background: #ffffff;
             box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-        }
-
-        section[data-testid="stSidebar"] {
-            background-color: #f8fafc;
-            border-right: 1px solid #e2e8f0;
         }
     </style>
     """,
