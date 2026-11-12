@@ -397,14 +397,16 @@ def scrape_single_chat(url: str, apply_filter: bool, target_lang: str = None) ->
                     text_content = "".join(extracted_texts)
                     text_content = re.sub(r".*?", "", text_content)
 
-                    # --- ROBUST REGEX CLEANING FILTER ---
+                    # --- STRIP FILE ATTACHMENTS & METADATA ---
+                    text_content = re.sub(r"!\[.*?\]\(.*?\)", "", text_content)
                     text_content = re.sub(
                         r"(?:the\s+output\s+of\s+this\s+plugin\s+was\s+redacted\.?|reference:\s*operating\s+system\s+concepts[^.\n]*\.)",
                         "",
                         text_content,
                         flags=re.IGNORECASE
                     )
-                    # ------------------------------------
+                    text_content = text_content.strip()
+                    # ----------------------------------------
 
                     if text_content.strip():
                         role_label = "User" if author == "user" else "ChatGPT"
