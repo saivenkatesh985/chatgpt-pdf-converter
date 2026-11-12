@@ -49,7 +49,7 @@ st.set_page_config(
     page_title="ChatGPT Document Studio Pro", page_icon="✨", layout="wide"
 )
 
-# --- PROFESSIONAL UI & DESIGN SYSTEM CSS (WITH FIXED SIDEBAR CONTRAST) ---
+# --- PROFESSIONAL UI & DESIGN SYSTEM CSS (WITH DARK SIDEBAR) ---
 st.markdown(
     """
     <style>
@@ -59,17 +59,17 @@ st.markdown(
             font-family: 'Inter', sans-serif !important;
         }
 
-        /* Force clean readable text colors in sidebar regardless of Streamlit theme settings */
+        /* Force dark background and white text for the sidebar */
         section[data-testid="stSidebar"] {
-            background-color: #f8fafc !important;
-            color: #1e293b !important;
-            border-right: 1px solid #e2e8f0;
+            background-color: #121212 !important;
+            color: #f3f4f6 !important;
+            border-right: 1px solid #27272a;
         }
 
         section[data-testid="stSidebar"] .stMarkdown, 
         section[data-testid="stSidebar"] label, 
         section[data-testid="stSidebar"] .streamlit-expanderHeader {
-            color: #1e293b !important;
+            color: #f3f4f6 !important;
         }
 
         .studio-header {
@@ -96,12 +96,12 @@ st.markdown(
             border-radius: 8px;
             font-weight: 600;
             padding: 0.5rem 1rem;
-            border: 1px solid rgba(0,0,0,0.08);
+            border: 1px solid rgba(255,255,255,0.1);
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .stButton>button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.2);
         }
 
         div[data-testid="stVerticalBlock"] > div[style*="border"] {
