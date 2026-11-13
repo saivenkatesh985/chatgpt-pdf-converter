@@ -83,7 +83,7 @@ with st.sidebar.expander("📌 Document & Branding", expanded=True):
     )
     font_style = st.selectbox("Font Style", ["Sans-serif", "Serif", "Monospace"])
     custom_title = st.text_input(
-        "Document Title Text", value="Quick Revision Os Notes"
+        "Document Title Text", value=""
     )
     header_alignment = st.selectbox(
         "Header Alignment", ["Left", "Center", "Right"]
@@ -254,7 +254,11 @@ def parse_math_expression_blocks(text: str) -> str:
 
 
 def parse_custom_tags_and_flowcharts(text: str) -> str:
-    return parse_math_expression_blocks(text)
+    text = parse_math_expression_blocks(text)
+    text = re.sub(r'<icon[^>]*/>', '<div style="text-align: center; font-weight: bold; margin: 4px 0;">⬇️</div>', text)
+    text = re.sub(r'</?box[^>]*>', '', text)
+    text = re.sub(r'<text[^>]*>(.*?)</text>', r'<div style="margin: 4px 0;">\1</div>', text, flags=re.DOTALL | re.IGNORECASE)
+    return text
 
 
 def scrape_single_chat(url: str, apply_filter: bool, target_lang: str = None) -> list:
@@ -328,6 +332,17 @@ def scrape_single_chat(url: str, apply_filter: bool, target_lang: str = None) ->
                                 
                     text_content = "".join(extracted_texts)
                     text_content = re.sub(r".*?", "", text_content)
+
+                    # --- CLEANING FILTERS ---
+                    text_content = re.sub(r"!\[.*?\]\(.*?\)", "", text_content)
+                    text_content = re.sub(
+                        r"(?:the\s+output\s+of\s+this\s+plugin\s+was\s+redacted\.?|reference:\s*operating\s+system\s+concepts[^.\n]*\.)",
+                        "",
+                        text_content,
+                        flags=re.IGNORECASE
+                    )
+                    text_content = text_content.strip()
+                    # ------------------------
 
                     if text_content.strip():
                         role_label = "User" if author == "user" else "ChatGPT"
@@ -960,7 +975,7 @@ with tab_input:
                         sec_title = (
                             link_titles.get(i, f"Conversation Section #{i+1}")
                             if input_mode == "Bulk Links (Multiple)"
-                            else (custom_title if (show_header_title and custom_title and custom_title.strip()) else "")
+                            else ""
                         )
                         st.session_state.chat_sections.append((sec_title, msgs))
                 except Exception as e:
