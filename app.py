@@ -83,7 +83,7 @@ with st.sidebar.expander("📌 Document & Branding", expanded=True):
     )
     font_style = st.selectbox("Font Style", ["Sans-serif", "Serif", "Monospace"])
     custom_title = st.text_input(
-        "Document Title Text", value="ChatGPT Conversation Export"
+        "Document Title Text", value="Quick Revision Os Notes"
     )
     header_alignment = st.selectbox(
         "Header Alignment", ["Left", "Center", "Right"]
@@ -566,7 +566,7 @@ def build_html_document(
         {timestamp_html}
     </div>
     '''
-        if show_header_title
+        if (show_header_title and custom_title.strip())
         else ""
     )
 
@@ -640,15 +640,13 @@ def build_html_document(
         for msg in messages:
             role = msg["role"]
             
-            # Inject custom note if toggle is active and note exists for this index
-            if include_study_sheet or True: # Check custom notes dict
-                if global_msg_idx in injected_notes_dict and injected_notes_dict[global_msg_idx].strip():
-                    note_content = injected_notes_dict[global_msg_idx]
-                    document_body_html += f'''
-                    <div style="background: rgba(37, 99, 235, 0.05); border-left: 3px solid #2563eb; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-style: italic;">
-                        <strong>📝 Custom Note:</strong> {note_content}
-                    </div>
-                    '''
+            if global_msg_idx in injected_notes_dict and injected_notes_dict[global_msg_idx].strip():
+                note_content = injected_notes_dict[global_msg_idx]
+                document_body_html += f'''
+                <div style="background: rgba(37, 99, 235, 0.05); border-left: 3px solid #2563eb; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-style: italic;">
+                    <strong>📝 Custom Note:</strong> {note_content}
+                </div>
+                '''
 
             if role == "User":
                 if is_chat_bubbles:
@@ -773,7 +771,7 @@ def convert_chats_to_markdown(
     active_sections = get_filtered_sections(
         chat_sections, message_filter_role, selection_mode, allowed_ids
     )
-    md_content = f"# {custom_title}\n\n"
+    md_content = f"# {custom_title}\n\n" if custom_title else ""
     for sec_title, messages in active_sections:
         if sec_title:
             md_content += f"## {sec_title}\n\n"
